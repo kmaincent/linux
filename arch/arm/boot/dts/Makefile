@@ -484,7 +484,8 @@ dtb-$(CONFIG_SOC_IMX6Q) += \
 	imx6q-utilite-pro.dtb \
 	imx6q-wandboard.dtb \
 	imx6q-wandboard-revb1.dtb \
-	imx6q-winmate-fa30a120a.dtb \
+	imx6q-winmate-fa30a120a7.dtb \
+	imx6q-winmate-fa30a120a10.dtb \
 	imx6q-zii-rdu2.dtb \
 	imx6qp-nitrogen6_max.dtb \
 	imx6qp-nitrogen6_som2.dtb \

@@ -1,0 +1,48 @@
+/*
+ * Copyright 2020 Bootlin
+ * Copyright 2012-2015 Freescale Semiconductor, Inc.
+ * Copyright 2011 Linaro Ltd.
+ *
+ * License. You may obtain a copy of the GNU General Public License
+ * Version 2 or later at the following locations:
+ *
+ * http://www.opensource.org/licenses/gpl-license.html
+ * http://www.gnu.org/copyleft/gpl.html
+ */
+
+/dts-v1/;
+
+#include "imx6q.dtsi"
+#include "imx6qdl-winmate-fa30a120a.dtsi"
+
+
+/ {
+	model = "Winmate iMX6Q board fa30a120a";
+	compatible = "fsl,imx6q-sabresd", "fsl,imx6q";
+};
+
+&ldb {
+	status = "okay";
+	lvds-channel@0 {
+		crtc = "ipu2-di0";
+		fsl,data-mapping = "spwg";
+		fsl,data-width = <18>;
+		primary;
+		status = "okay";
+		display-timings {
+			native-mode = <&timing0>;
+			timing0: hsd100ifw4 {
+				clock-frequency = <65000000>;
+				hactive = <1024>;
+				vactive = <600>;
+				hback-porch = <220>;
+				hfront-porch = <40>;
+				vback-porch = <21>;
+				vfront-porch = <7>;
+				hsync-len = <60>;
+				vsync-len = <10>;
+			};
+		};
+	};
+
+};

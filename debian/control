@@ -1,0 +1,32 @@
+Source: linux-4.14-kernel
+Section: kernel
+Priority: optional
+Maintainer: Kory Maincent <kory.maincent@bootlin.com>
+Build-Depends: debhelper (>= 9), bc, libelf-dev, u-boot-tools, flex, bison, lzop:native
+Standards-Version: 3.8.4
+Homepage: http://www.kernel.org/
+
+Package: linux-image-4.14-kernel
+Depends: kmod | module-init-tools, linux-base (>= 3~), debconf (>= 0.5) | debconf-2.0, initramfs-tools (>= 0.99~) | linux-initramfs-tool, busybox
+Pre-Depends: debconf | debconf-2.0
+Provides: linux-image, linux-image-2.6
+Architecture: armhf
+Description: Linux kernel, version 4.14 kernel
+ This package contains the Linux kernel, modules and corresponding other
+ files
+
+Package: linux-headers-4.14-kernel
+Provides: linux-headers, linux-headers-2.6
+Architecture: armhf
+Description: Linux kernel headers
+ This package provides kernel header files
+ .
+ This is useful for people who need to build external modules
+
+Package: linux-libc-dev-4.14-kernel
+Provides: linux-libc-dev, linux-kernel-headers, linux-headers-2.6
+Replaces: linux-libc-dev
+Architecture: armhf
+Description: Linux support headers for userspace development
+ This package provides userspaces headers from the Linux kernel. These headers
+ are used by the installed headers for GNU glibc and other system libraries.

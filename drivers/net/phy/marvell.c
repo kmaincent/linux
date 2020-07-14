@@ -38,6 +38,8 @@
 #include <asm/irq.h>
 #include <linux/uaccess.h>
 
+#include "marvell_ptp.h"
+
 #define MII_MARVELL_PHY_PAGE		22
 #define MII_MARVELL_COPPER_PAGE		0x00
 #define MII_MARVELL_FIBER_PAGE		0x01
@@ -3264,6 +3266,10 @@ static int m88e1510_probe(struct phy_device *phydev)
 	if (err)
 		return err;
 
+	err = marvell_ptp_probe(phydev);
+	if (err)
+		return err;
+
 	return phy_sfp_probe(phydev, &m88e1510_sfp_ops);
 }
 
@@ -3499,6 +3505,7 @@ static struct phy_driver marvell_drivers[] = {
 		.features = PHY_GBIT_FIBRE_FEATURES,
 		.flags = PHY_POLL_CABLE_TEST,
 		.probe = m88e1510_probe,
+		.remove = marvell_ptp_remove,
 		.config_init = m88e1510_config_init,
 		.config_aneg = m88e1510_config_aneg,
 		.read_status = marvell_read_status,

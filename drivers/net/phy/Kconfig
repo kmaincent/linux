@@ -207,8 +207,25 @@ config LSI_ET1011C_PHY
 	help
 	  Supports the LSI ET1011C PHY.
 
+config LXT_PHY
+	tristate "Intel LXT PHYs"
+	help
+	  Currently supports the lxt970, lxt971
+
+config MARVELL_PHY_PTP
+	tristate "Marvell PHY PTP support"
+	depends on NETWORK_PHY_TIMESTAMPING && PTP_1588_CLOCK
+	help
+	  Support PHY timestamping on Marvell 88E1510, 88E1512, 88E1514
+	  and 88E1518 PHYs.
+
+	  N.B. In order for this to be fully functional, your MAC driver
+	  must call the skb_tx_timestamp() function.
+
 config MARVELL_PHY
 	tristate "Marvell Alaska PHYs"
+	# This can't be builtin if the PTP support is modular
+	depends on MARVELL_PHY_PTP=n || MARVELL_PHY_PTP
 	help
 	  Currently has a driver for the 88E1XXX
 

@@ -38,6 +38,8 @@
 #include <asm/irq.h>
 #include <linux/uaccess.h>
 
+#include "marvell_ptp.h"
+
 #define MII_MARVELL_PHY_PAGE		22
 #define MII_MARVELL_COPPER_PAGE		0x00
 #define MII_MARVELL_FIBER_PAGE		0x01
@@ -423,6 +425,15 @@ static irqreturn_t marvell_handle_interrupt(struct phy_device *phydev)
 	phy_trigger_machine(phydev);
 
 	return IRQ_HANDLED;
+}
+
+static irqreturn_t m88e1510_handle_interrupt(struct phy_device *phydev)
+{
+	irqreturn_t handled;
+
+	handled = marvell_ptp_irq(phydev);
+	handled |= marvell_handle_interrupt(phydev);
+	return handled;
 }
 
 static int marvell_set_polarity(struct phy_device *phydev, int polarity)
@@ -3655,6 +3666,10 @@ static int m88e1510_probe(struct phy_device *phydev)
 	if (err)
 		return err;
 
+	err = marvell_ptp_probe(phydev);
+	if (err)
+		return err;
+
 	return phy_sfp_probe(phydev, &m88e1510_sfp_ops);
 }
 
@@ -3916,11 +3931,12 @@ static struct phy_driver marvell_drivers[] = {
 		.features = PHY_GBIT_FIBRE_FEATURES,
 		.flags = PHY_POLL_CABLE_TEST,
 		.probe = m88e1510_probe,
+		.remove = marvell_ptp_remove,
 		.config_init = m88e1510_config_init,
 		.config_aneg = m88e1510_config_aneg,
 		.read_status = marvell_read_status,
 		.config_intr = marvell_config_intr,
-		.handle_interrupt = marvell_handle_interrupt,
+		.handle_interrupt = m88e1510_handle_interrupt,
 		.get_wol = m88e1318_get_wol,
 		.set_wol = m88e1318_set_wol,
 		.resume = marvell_resume,

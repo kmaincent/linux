@@ -476,6 +476,13 @@ config COMMON_CLK_FIXED_MMIO
 	help
 	  Support for Memory Mapped IO Fixed clocks
 
+config COMMON_CLK_NVMEM
+	bool "Clock driver for NVMEM provided frequency"
+	depends on COMMON_CLK && OF
+	help
+	  This driver allows a clock frequency to be provided by NVMEM data, for
+	  example in an EEPROM, by fuses or other non-volatile storage.
+
 config COMMON_CLK_K210
 	bool "Clock driver for the Canaan Kendryte K210 SoC"
 	depends on OF && RISCV && SOC_CANAAN_K210

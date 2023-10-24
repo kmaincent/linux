@@ -45,6 +45,19 @@ struct pse_control_status {
 };
 
 /**
+ * enum pse_types - Types of PSE controller.
+ *
+ * @PSE_UNKNOWN: Type of PSE controller is unknown
+ * @PSE_PODL: PSE controller which support PoDL
+ * @PSE_POE: PSE controller which support PoE
+ */
+enum pse_types {
+	PSE_UNKNOWN = BIT(0),
+	PSE_PODL = BIT(1),
+	PSE_POE = BIT(2),
+};
+
+/**
  * struct pse_controller_ops - PSE controller driver callbacks
  *
  * @ethtool_get_status: get PSE control status for ethtool interface
@@ -77,6 +90,7 @@ struct pse_control;
  *            device tree to id as given to the PSE control ops
  * @nr_lines: number of PSE controls in this controller device
  * @lock: Mutex for serialization access to the PSE controller
+ * @types: types of the PSE controller
  */
 struct pse_controller_dev {
 	const struct pse_controller_ops *ops;
@@ -89,6 +103,7 @@ struct pse_controller_dev {
 			const struct of_phandle_args *pse_spec);
 	unsigned int nr_lines;
 	struct mutex lock;
+	enum pse_types types;
 };
 
 #if IS_ENABLED(CONFIG_PSE_CONTROLLER)
@@ -107,6 +122,8 @@ int pse_ethtool_get_status(struct pse_control *psec,
 int pse_ethtool_set_config(struct pse_control *psec,
 			   struct netlink_ext_ack *extack,
 			   const struct pse_control_config *config);
+
+enum pse_types pse_get_types(struct pse_control *psec);
 
 #else
 
@@ -131,6 +148,11 @@ static inline int pse_ethtool_set_config(struct pse_control *psec,
 					 const struct pse_control_config *config)
 {
 	return -ENOTSUPP;
+}
+
+enum pse_types pse_get_types(struct pse_control *psec)
+{
+	return PSE_UNKNOWN;
 }
 
 #endif

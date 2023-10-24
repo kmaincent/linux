@@ -10,6 +10,7 @@
 #include <linux/of_net.h>
 #include <linux/if_vlan.h>
 #include <linux/phylink.h>
+#include <linux/pse-pd/pse.h>
 
 #include "prestera.h"
 #include "prestera_hw.h"
@@ -381,6 +382,7 @@ static int prestera_port_sfp_bind(struct prestera_port *port)
 	ports = of_find_node_by_name(sw->np, "ports");
 
 	for_each_child_of_node(ports, node) {
+		struct pse_control *psec = NULL;
 		int num;
 
 		err = of_property_read_u32(node, "prestera,port-num", &num);
@@ -393,6 +395,18 @@ static int prestera_port_sfp_bind(struct prestera_port *port)
 
 		if (port->fp_id != num)
 			continue;
+
+		if (!IS_ENABLED(CONFIG_PSE_CONTROLLER))
+			goto out;
+
+		psec = of_pse_control_get(node);
+		if (PTR_ERR(psec) == -ENOENT)
+			goto out;
+
+		port->dev->psec = psec;
+
+		if (!of_property_present(node, "sfp"))
+			goto out;
 
 		port->phylink_pcs.ops = &prestera_pcs_ops;
 		port->phylink_pcs.neg_mode = true;

@@ -35,21 +35,14 @@ static int pse_get_pse_attributes(struct net_device *dev,
 				  struct netlink_ext_ack *extack,
 				  struct pse_reply_data *data)
 {
-	struct phy_device *phydev = dev->phydev;
-
-	if (!phydev) {
-		NL_SET_ERR_MSG(extack, "No PHY is attached");
-		return -EOPNOTSUPP;
-	}
-
-	if (!phydev->psec) {
+	if (!dev->psec) {
 		NL_SET_ERR_MSG(extack, "No PSE is attached");
 		return -EOPNOTSUPP;
 	}
 
 	memset(&data->status, 0, sizeof(data->status));
 
-	return pse_ethtool_get_status(phydev->psec, extack, &data->status);
+	return pse_ethtool_get_status(dev->psec, extack, &data->status);
 }
 
 static int pse_prepare_data(const struct ethnl_req_info *req_base,
@@ -166,7 +159,7 @@ ethnl_set_pse(struct ethnl_req_info *req_info, struct genl_info *info)
 	struct net_device *dev = req_info->dev;
 	struct pse_control_config config = {};
 	struct nlattr **tb = info->attrs;
-	struct phy_device *phydev;
+	struct pse_control *psec;
 
 	/* These values are already validated by the ethnl_pse_set_policy */
 	if (pse_get_types(psec) & PSE_PODL)
@@ -174,20 +167,14 @@ ethnl_set_pse(struct ethnl_req_info *req_info, struct genl_info *info)
 	if (pse_get_types(psec) & PSE_POE)
 		config.admin_control = nla_get_u32(tb[ETHTOOL_A_PSE_ADMIN_CONTROL]);
 
-
-	phydev = dev->phydev;
-	if (!phydev) {
-		NL_SET_ERR_MSG(info->extack, "No PHY is attached");
+	if (!dev->psec) {
+		NL_SET_ERR_MSG(info->extack, "No PSE is attached to netdev");
 		return -EOPNOTSUPP;
 	}
-
-	if (!phydev->psec) {
-		NL_SET_ERR_MSG(info->extack, "No PSE is attached");
-		return -EOPNOTSUPP;
-	}
+	psec = dev->psec;
 
 	/* Return errno directly - PSE has no notification */
-	return pse_ethtool_set_config(phydev->psec, info->extack, &config);
+	return pse_ethtool_set_config(psec, info->extack, &config);
 }
 
 const struct ethnl_request_ops ethnl_pse_request_ops = {

@@ -82,6 +82,10 @@ static int pse_reply_size(const struct ethnl_req_info *req_base,
 		len += nla_total_size(sizeof(u32)); /* _PODL_PSE_ADMIN_STATE */
 	if (st->podl_pw_status > 0)
 		len += nla_total_size(sizeof(u32)); /* _PODL_PSE_PW_D_STATUS */
+	if (st->admin_state > 0)
+		len += nla_total_size(sizeof(u32)); /* _PSE_ADMIN_STATE */
+	if (st->pw_status > 0)
+		len += nla_total_size(sizeof(u32)); /* _PSE_PW_D_STATUS */
 
 	return len;
 }
@@ -103,6 +107,16 @@ static int pse_fill_reply(struct sk_buff *skb,
 			st->podl_pw_status))
 		return -EMSGSIZE;
 
+	if (st->admin_state > 0 &&
+	    nla_put_u32(skb, ETHTOOL_A_PSE_ADMIN_STATE,
+			st->admin_state))
+		return -EMSGSIZE;
+
+	if (st->pw_status > 0 &&
+	    nla_put_u32(skb, ETHTOOL_A_PSE_PW_D_STATUS,
+			st->pw_status))
+		return -EMSGSIZE;
+
 	return 0;
 }
 
@@ -113,12 +127,37 @@ const struct nla_policy ethnl_pse_set_policy[ETHTOOL_A_PSE_MAX + 1] = {
 	[ETHTOOL_A_PODL_PSE_ADMIN_CONTROL] =
 		NLA_POLICY_RANGE(NLA_U32, ETHTOOL_PODL_PSE_ADMIN_STATE_DISABLED,
 				 ETHTOOL_PODL_PSE_ADMIN_STATE_ENABLED),
+	[ETHTOOL_A_PSE_ADMIN_CONTROL] =
+		NLA_POLICY_RANGE(NLA_U32, ETHTOOL_PSE_ADMIN_STATE_DISABLED,
+				 ETHTOOL_PSE_ADMIN_STATE_ENABLED),
 };
 
 static int
 ethnl_set_pse_validate(struct ethnl_req_info *req_info, struct genl_info *info)
 {
-	return !!info->attrs[ETHTOOL_A_PODL_PSE_ADMIN_CONTROL];
+	struct net_device *dev = req_info->dev;
+	struct nlattr **tb = info->attrs;
+
+	if (!tb[ETHTOOL_A_PODL_PSE_ADMIN_CONTROL] &&
+	    !tb[ETHTOOL_A_PSE_ADMIN_CONTROL])
+		return 0;
+
+	if (tb[ETHTOOL_A_PODL_PSE_ADMIN_CONTROL] &&
+	    !(pse_get_types(dev->psec) & PSE_PODL)) {
+		NL_SET_ERR_MSG_ATTR(info->extack,
+				    tb[ETHTOOL_A_PODL_PSE_ADMIN_CONTROL],
+				    "setting PSE PoDL admin control not supported");
+		return -EOPNOTSUPP;
+	}
+	if (tb[ETHTOOL_A_PSE_ADMIN_CONTROL] &&
+	    !(pse_get_types(dev->psec) & PSE_POE)) {
+		NL_SET_ERR_MSG_ATTR(info->extack,
+				    tb[ETHTOOL_A_PSE_ADMIN_CONTROL],
+				    "setting PSE admin control not supported");
+		return -EOPNOTSUPP;
+	}
+
+	return 1;
 }
 
 static int
@@ -129,8 +168,12 @@ ethnl_set_pse(struct ethnl_req_info *req_info, struct genl_info *info)
 	struct nlattr **tb = info->attrs;
 	struct phy_device *phydev;
 
-	/* this values are already validated by the ethnl_pse_set_policy */
-	config.podl_admin_control = nla_get_u32(tb[ETHTOOL_A_PODL_PSE_ADMIN_CONTROL]);
+	/* These values are already validated by the ethnl_pse_set_policy */
+	if (pse_get_types(psec) & PSE_PODL)
+		config.podl_admin_control = nla_get_u32(tb[ETHTOOL_A_PODL_PSE_ADMIN_CONTROL]);
+	if (pse_get_types(psec) & PSE_POE)
+		config.admin_control = nla_get_u32(tb[ETHTOOL_A_PSE_ADMIN_CONTROL]);
+
 
 	phydev = dev->phydev;
 	if (!phydev) {

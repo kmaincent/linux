@@ -127,6 +127,8 @@ static int marvell_read_tstamp(struct phy_device *phydev,
 
 		/* Clear valid */
 		__phy_write(phydev, reg, 0);
+
+		ret = 1;
 	}
 restore:
 	return phy_restore_page(phydev, oldpage, ret);
@@ -458,7 +460,7 @@ static int marvell_ptp_hwtstamp(struct mii_timestamper *mii_ts,
 
 	case HWTSTAMP_TX_ON:
 		cfg0 = 0;
-		cfg2 |= PTP1_PORT_CONFIG_2_DEPINTEN;
+		//cfg2 |= PTP1_PORT_CONFIG_2_DEPINTEN;
 		break;
 
 	default:
@@ -487,12 +489,17 @@ static int marvell_ptp_hwtstamp(struct mii_timestamper *mii_ts,
 		 */
 		config->rx_filter = HWTSTAMP_FILTER_SOME;
 		cfg0 = 0;
-		cfg2 |= PTP1_PORT_CONFIG_2_ARRINTEN;
+		//cfg2 |= PTP1_PORT_CONFIG_2_ARRINTEN;
 		break;
 
 	default:
 		return -ERANGE;
 	}
+
+	err = phy_write_paged(ptp->phydev, 14, 1, 0x0003);
+	if (err < 0)
+		return err;
+
 
 	err = phy_modify_paged(ptp->phydev, MARVELL_PAGE_PTP_PORT_1,
 			       PTP1_PORT_CONFIG_0,
@@ -538,7 +545,6 @@ static int marvell_ptp_port_config(struct phy_device *phydev)
 	 */
 	err = phy_write_paged(phydev, MARVELL_PAGE_PTP_PORT_1,
 			      PTP1_PORT_CONFIG_0,
-			      PTP1_PORT_CONFIG_0_DISTSPECCHECK |
 			      PTP1_PORT_CONFIG_0_DISTSOVERWRITE |
 			      PTP1_PORT_CONFIG_0_DISPTP);
 	if (err < 0)
@@ -602,10 +608,10 @@ static void marvell_ptp_worker(struct work_struct *work)
 	struct marvell_ptp *ptp = container_of(work, struct marvell_ptp,
 					       ts_work.work);
 
-	marvell_ptp_rx_ts(ptp);
-
 	if (ptp->tx_skb)
 		marvell_ptp_txtstamp_complete(ptp);
+
+	marvell_ptp_rx_ts(ptp);
 
 	marvell_ptp_rx_expire(ptp);
 

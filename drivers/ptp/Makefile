@@ -3,6 +3,11 @@
 # Makefile for PTP 1588 clock support.
 #
 
+ifdef CONFIG_PTP_1588_CLOCK
+# The ptp_clock consumer is built-in whenever PTP_1588_CLOCK is built-in
+# or module
+obj-y					:= ptp_clock_consumer.o
+endif
 ptp-y					:= ptp_clock.o ptp_chardev.o ptp_sysfs.o ptp_vclock.o
 ptp_kvm-$(CONFIG_X86)			:= ptp_kvm_x86.o ptp_kvm_common.o
 ptp_kvm-$(CONFIG_HAVE_ARM_SMCCC)	:= ptp_kvm_arm.o ptp_kvm_common.o

@@ -445,6 +445,14 @@ struct ptp_clock *ptp_clock_get_by_index(struct device *dev, int index);
 void ptp_clock_put(struct device *dev, struct ptp_clock *ptp);
 
 /**
+ * remove_hwtstamp_provider() - Put and free the hwtstamp provider
+ *
+ * @rcu_head:  RCU callback head.
+ */
+
+void remove_hwtstamp_provider(struct rcu_head *rcu_head);
+
+/**
  * ptp_find_pin() - obtain the pin index of a given auxiliary function
  *
  * The caller must hold ptp_clock::pincfg_mux.  Drivers do not have
@@ -532,6 +540,8 @@ static inline void ptp_clock_put(struct device *dev, struct ptp_clock *ptp)
 static inline struct ptp_clock *ptp_clock_get_by_index(struct device *dev,
 						       int index)
 { return NULL; }
+static inline void remove_hwtstamp_provider(struct rcu_head *rcu_head)
+{ return; }
 static inline int ptp_find_pin(struct ptp_clock *ptp,
 			       enum ptp_pin_function func, unsigned int chan)
 { return -1; }

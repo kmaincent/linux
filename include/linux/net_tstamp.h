@@ -20,6 +20,22 @@ enum hwtstamp_source {
 };
 
 /**
+ * struct hwtstamp_provider - Description of a hwtstamp provider object
+ *
+ * @rcu_head: RCU callback used to free the struct.
+ * @dev: device attached to the hwtstamp provider used to put the ptp clock.
+ * @ptp: PTP clock pointer of the hwtstamp provider.
+ * @qualifier: hwtstamp provider qualifier.
+ */
+
+struct hwtstamp_provider {
+	struct rcu_head rcu_head;
+	struct device *dev;
+	struct ptp_clock *ptp;
+	enum hwtstamp_provider_qualifier qualifier;
+};
+
+/**
  * struct kernel_hwtstamp_config - Kernel copy of struct hwtstamp_config
  *
  * @flags: see struct hwtstamp_config
@@ -31,6 +47,7 @@ enum hwtstamp_source {
  *	copied the ioctl request back to user space
  * @source: indication whether timestamps should come from the netdev or from
  *	an attached phylib PHY
+ * @qualifier: qualifier of the hwtstamp provider
  *
  * Prefer using this structure for in-kernel processing of hardware
  * timestamping configuration, over the inextensible struct hwtstamp_config
@@ -43,6 +60,7 @@ struct kernel_hwtstamp_config {
 	struct ifreq *ifr;
 	bool copied_to_user;
 	enum hwtstamp_source source;
+	enum hwtstamp_provider_qualifier qualifier;
 };
 
 static inline void hwtstamp_config_to_kernel(struct kernel_hwtstamp_config *kernel_cfg,

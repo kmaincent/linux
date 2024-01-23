@@ -31,6 +31,7 @@
 #include <linux/phy_led_triggers.h>
 #include <linux/pse-pd/pse.h>
 #include <linux/property.h>
+#include <linux/ptp_clock_kernel.h>
 #include <linux/rtnetlink.h>
 #include <linux/sfp.h>
 #include <linux/skbuff.h>
@@ -1936,6 +1937,12 @@ void phy_detach(struct phy_device *phydev)
 
 	phy_suspend(phydev);
 	if (dev) {
+		/* Disable timestamp if selected */
+		if (ptp_clock_phydev(dev->hwtstamp.ptp) == phydev) {
+			dev->hwtstamp.ptp = NULL;
+			dev->hwtstamp.qualifier = HWTSTAMP_PROVIDER_QUALIFIER_PRECISE;
+		}
+
 		phydev->attached_dev->phydev = NULL;
 		phydev->attached_dev = NULL;
 	}

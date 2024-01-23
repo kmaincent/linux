@@ -98,3 +98,13 @@ void ptp_clock_put(struct device *dev, struct ptp_clock *ptp)
 	put_device(&ptp->dev);
 	module_put(ptp->info->owner);
 }
+
+void remove_hwtstamp_provider(struct rcu_head *rcu_head)
+{
+	struct hwtstamp_provider *hwtstamp;
+
+	hwtstamp = container_of(rcu_head, struct hwtstamp_provider, rcu_head);
+	ptp_clock_put(hwtstamp->dev, hwtstamp->ptp);
+	kfree(hwtstamp);
+}
+EXPORT_SYMBOL(remove_hwtstamp_provider);

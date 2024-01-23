@@ -560,6 +560,15 @@ attribute-sets:
         name: tx-lpi-timer
         type: u32
   -
+    name: tsinfo-hwtst-provider
+    attributes:
+      -
+        name: index
+        type: u32
+      -
+        name: qualifier
+        type: u32
+  -
     name: tsinfo
     attributes:
       -
@@ -580,6 +589,16 @@ attribute-sets:
         nested-attributes: bitset
       -
         name: phc-index
+        type: u32
+      -
+        name: ghwtstamp
+        type: u8
+      -
+        name: hwtst-provider
+        type: nest
+        nested-attributes: tsinfo-hwtst-provider
+      -
+        name: hwtst-flags
         type: u32
   -
     name: cable-result
@@ -1373,7 +1392,7 @@ operations:
       notify: eee-get
     -
       name: tsinfo-get
-      doc: Get tsinfo params.
+      doc: Get tsinfo params or hwtstamp config.
 
       attribute-set: tsinfo
 
@@ -1381,6 +1400,8 @@ operations:
         request:
           attributes:
             - header
+            - ghwtstamp
+            - hwtst-provider
         reply:
           attributes:
             - header
@@ -1388,6 +1409,8 @@ operations:
             - tx-types
             - rx-filters
             - phc-index
+            - hwtst-provider
+            - hwtst-flags
       dump: *tsinfo-get-op
     -
       name: cable-test-act
@@ -1693,3 +1716,17 @@ operations:
       name: mm-ntf
       doc: Notification for change in MAC Merge configuration.
       notify: mm-get
+    -
+      name: tsinfo-set
+      doc: Set hwtstamp.
+
+      attribute-set: tsinfo
+
+      do:
+        request:
+          attributes:
+            - header
+            - tx-types
+            - rx-filters
+            - hwtst-provider
+            - hwtst-flags

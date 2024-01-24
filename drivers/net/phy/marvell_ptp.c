@@ -519,7 +519,7 @@ static int marvell_ptp_hwtstamp(struct mii_timestamper *mii_ts,
 }
 
 static int marvell_ptp_ts_info(struct mii_timestamper *mii_ts,
-			       struct ethtool_ts_info *ts_info)
+			       struct kernel_ethtool_ts_info *ts_info)
 {
 	struct marvell_ptp *ptp = mii_ts_to_ptp(mii_ts);
 

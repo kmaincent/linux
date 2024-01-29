@@ -416,6 +416,43 @@ struct ptp_clock *ptp_clock_get_by_index(struct device *dev, int index);
 void ptp_clock_put(struct device *dev, struct ptp_clock *ptp);
 
 /**
+ * netdev_ptp_clock_find() - obtain the next PTP clock in the netdev
+ *			     topology
+ *
+ * @dev:    Pointer of the net device
+ * @index:  Pointer of ptp clock index start point
+ */
+
+struct ptp_clock *netdev_ptp_clock_find(struct net_device *dev,
+					unsigned long *indexp);
+
+#define netdev_for_each_ptp_clock_start(dev, index, entry, start) \
+	for (index = start, entry = netdev_ptp_clock_find(dev, &index); \
+	     entry; index++, entry = netdev_ptp_clock_find(dev, &index))
+
+/**
+ * netdev_support_hwtstamp_qualifier() - return true if the net device support the
+ *					 hwtstamp qualifier
+ *
+ * @dev:        Pointer of the net device
+ * @qualifier:  hwtstamp provider qualifier
+ */
+
+bool netdev_support_hwtstamp_qualifier(struct net_device *dev,
+				       enum hwtstamp_provider_qualifier qualifier);
+
+/**
+ * netdev_support_hwtstamp() - return true if the hwtstamp belong to the
+ *			       netdev topology
+ *
+ * @dev:       Pointer of the net device
+ * @hwtstamp:  Pointer of the hwtstamp provider
+ */
+
+bool netdev_support_hwtstamp(struct net_device *dev,
+			     struct hwtstamp_provider *hwtstamp);
+
+/**
  * ptp_find_pin() - obtain the pin index of a given auxiliary function
  *
  * The caller must hold ptp_clock::pincfg_mux.  Drivers do not have
@@ -498,6 +535,16 @@ static inline struct phy_device *ptp_clock_phydev(struct ptp_clock *ptp);
 { return NULL; }
 static inline struct ptp_clock *ptp_clock_get_by_index(int index);
 { return NULL; }
+static inline struct ptp_clock *netdev_ptp_clock_find(struct net_device *dev,
+						      unsigned long *indexp)
+{ return NULL; }
+static inline bool
+netdev_support_hwtstamp_qualifier(struct net_device *dev,
+				  enum hwtstamp_provider_qualifier qualifier);
+{ return false; }
+static inline bool netdev_support_hwtstamp(struct net_device *dev,
+					   struct hwtstamp_provider *hwtst);
+{ return false; }
 static inline int ptp_find_pin(struct ptp_clock *ptp,
 			       enum ptp_pin_function func, unsigned int chan)
 { return -1; }

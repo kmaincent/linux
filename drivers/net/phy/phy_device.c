@@ -1939,6 +1939,7 @@ void phy_detach(struct phy_device *phydev)
 	if (dev) {
 		/* Disable timestamp if selected */
 		if (ptp_clock_phydev(dev->hwtstamp.ptp) == phydev) {
+			ptp_clock_put(&dev->dev, dev->hwtstamp.ptp);
 			dev->hwtstamp.ptp = NULL;
 			dev->hwtstamp.qualifier = HWTSTAMP_PROVIDER_QUALIFIER_PRECISE;
 		}

@@ -1221,27 +1221,49 @@ callback supports.
 TSINFO_GET
 ==========
 
-Gets timestamping information like ``ETHTOOL_GET_TS_INFO`` ioctl request.
+Gets timestamping information like ``ETHTOOL_GET_TS_INFO`` ioctl request or
+get hardware timestamping configuration like ``SIOCGHWTSTAMP`` ioctl request.
 
 Request contents:
 
-  =====================================  ======  ==========================
-  ``ETHTOOL_A_TSINFO_HEADER``            nested  request header
-  =====================================  ======  ==========================
+  ===========================================  ======  ============================
+  ``ETHTOOL_A_TSINFO_HEADER``                  nested  request header
+  ``ETHTOOL_A_TSINFO_GHWTSTAMP``               bool    get hwtstamp configuration
+  ``ETHTOOL_A_TSINFO_HWTSTAMP_PROVIDER_NEST``  nested  PTP hw clock provider
+  ===========================================  ======  ============================
 
 Kernel response contents:
 
-  =====================================  ======  ==========================
+  =====================================  ======  ==================================
   ``ETHTOOL_A_TSINFO_HEADER``            nested  request header
   ``ETHTOOL_A_TSINFO_TIMESTAMPING``      bitset  SO_TIMESTAMPING flags
-  ``ETHTOOL_A_TSINFO_TX_TYPES``          bitset  supported Tx types
-  ``ETHTOOL_A_TSINFO_RX_FILTERS``        bitset  supported Rx filters
+  ``ETHTOOL_A_TSINFO_TX_TYPES``          bitset  supported or configured Tx types
+  ``ETHTOOL_A_TSINFO_RX_FILTERS``        bitset  supported or configured Rx filters
   ``ETHTOOL_A_TSINFO_PHC_INDEX``         u32     PTP hw clock index
-  =====================================  ======  ==========================
+  ``ETHTOOL_A_TSINFO_HWTSTAMP_FLAGS``    u32     hwstamp flags
+  =====================================  ======  ==================================
 
 ``ETHTOOL_A_TSINFO_PHC_INDEX`` is absent if there is no associated PHC (there
 is no special value for this case). The bitset attributes are omitted if they
 would be empty (no bit set).
+
+TSINFO_SET
+==========
+
+Sets hardware timestamping configuration like ``SIOCSHWTSTAMP`` ioctl request.
+
+Request contents:
+
+  ===========================================  ======  ========================
+  ``ETHTOOL_A_TSINFO_HEADER``                  nested  request header
+  ``ETHTOOL_A_TSINFO_TX_TYPES``                bitset  configured Tx type
+  ``ETHTOOL_A_TSINFO_RX_FILTERS``              bitset  configured Rx filter
+  ``ETHTOOL_A_TSINFO_HWTSTAMP_FLAGS``          u32     hwstamp flags
+  ``ETHTOOL_A_TSINFO_HWTSTAMP_PROVIDER_NEST``  nested  PTP hw clock provider
+  ===========================================  ======  ========================
+
+If ``ETHTOOL_A_TSINFO_HWTSTAMP_PROVIDER_NEST`` is absent, set the hwtstamp
+configuration of the current hwtstamp.
 
 CABLE_TEST
 ==========

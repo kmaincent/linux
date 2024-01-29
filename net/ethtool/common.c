@@ -629,10 +629,40 @@ int ethtool_check_ops(const struct ethtool_ops *ops)
 	return 0;
 }
 
+int ethtool_get_ts_info_by_phc(struct net_device *dev,
+			       struct kernel_ethtool_ts_info *info,
+			       struct hwtstamp_provider *hwtstamp)
+{
+	const struct ethtool_ops *ops = dev->ethtool_ops;
+
+	memset(info, 0, sizeof(*info));
+	info->cmd = ETHTOOL_GET_TS_INFO;
+	info->phc_qualifier = hwtstamp->qualifier;
+
+	if (!netdev_support_hwtstamp(dev, hwtstamp))
+		return -ENODEV;
+
+	if (ptp_clock_from_phylib(hwtstamp->ptp) &&
+	    phy_has_tsinfo(ptp_clock_phydev(hwtstamp->ptp)))
+		return phy_ts_info(ptp_clock_phydev(hwtstamp->ptp), info);
+
+	if (ptp_clock_from_netdev(hwtstamp->ptp) && ops->get_ts_info)
+		return ops->get_ts_info(dev, info);
+
+	info->so_timestamping = SOF_TIMESTAMPING_RX_SOFTWARE |
+				SOF_TIMESTAMPING_SOFTWARE;
+	info->phc_index = -1;
+
+	return 0;
+}
+
 int __ethtool_get_ts_info(struct net_device *dev, struct kernel_ethtool_ts_info *info)
 {
 	const struct ethtool_ops *ops = dev->ethtool_ops;
 	struct phy_device *phydev = dev->phydev;
+
+	if (dev->hwtstamp.ptp)
+		return ethtool_get_ts_info_by_phc(dev, info, &dev->hwtstamp);
 
 	memset(info, 0, sizeof(*info));
 	info->cmd = ETHTOOL_GET_TS_INFO;

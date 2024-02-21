@@ -72,6 +72,7 @@ enum {
 	PD692X0_MSG_PRG_PORT_MATRIX,
 	PD692X0_MSG_SET_PORT_PARAM,
 	PD692X0_MSG_GET_PORT_STATUS,
+	PD692X0_MSG_GET_PORT_CLASS,
 	PD692X0_MSG_DOWNLOAD_CMD,
 
 	/* add new message above here */
@@ -147,6 +148,12 @@ static const struct pd692x0_msg pd692x0_msg_template_list[PD692X0_MSG_CNT] = {
 		.key = PD692X0_KEY_PRG,
 		.sub = {0xff, 0x99, 0x15},
 		.data = {0x16, 0x16, 0x99, 0x4e,
+			 0x4e, 0x4e, 0x4e, 0x4e},
+	},
+	[PD692X0_MSG_GET_PORT_CLASS] = {
+		.key = PD692X0_KEY_REQ,
+		.sub = {0x05, 0xc4},
+		.data = {0x4e, 0x4e, 0x4e, 0x4e,
 			 0x4e, 0x4e, 0x4e, 0x4e},
 	},
 };
@@ -435,6 +442,58 @@ static int pd692x0_pi_is_enabled(struct pse_controller_dev *pcdev, int id)
 	}
 }
 
+const char status_msg_list[0xA9][62] = {
+	[0x06] = "Port is off: Main supply voltage is high.",
+	[0x07] = "Port is off: Main supply voltage is low.",
+	[0x08] = "Port is off: ‘Disable all ports’ pin is active.",
+	[0x0C] = "Port is off: Non-existing port number.",
+	[0x11] = "Port is yet undefined.",
+	[0x12] = "Port is off: Internal hardware fault.",
+	[0x1A] = "Port is off: User setting.",
+	[0x1B] = "Port is off: Detection is in process.",
+	[0x1C] = "Port is off: Non-802.3AF/AT powered device.",
+	[0x1E] = "Port is off: Underload state.",
+	[0x1F] = "Port is off: Overload state.",
+	[0x20] = "Port is off: Power budget exceeded.",
+	[0x21] = "Port is off: Internal hardware routing error.",
+	[0x22] = "Port is off: Configuration change.",
+	[0x24] = "Port is off: Voltage injection into the port.",
+	[0x25] = "Port is off: Improper Capacitor Detection",
+	[0x26] = "Port is off: Discharged load.",
+	[0x34] = "Port is off: Short condition.",
+	[0x35] = "Port is off: Over temperature at the port.",
+	[0x36] = "Port is off: Device is too hot.",
+	[0x37] = "Unknown device port status.",
+	[0x3C] = "Power Management-Static.",
+	[0x3D] = "Power Management-Static—OVL.",
+	[0x41] = "Power denied: Hardware power limit.",
+	[0x43] = "Port is off: Class error.",
+	[0x44] = "Port turn off during Host crash.",
+	[0x45] = "Delivered power port was forced to be shut down at host crash.",
+	[0x46] = "An enabled port was forced to be shut down at Host crash.",
+	[0x47] = "Force Power Crash Error.",
+	[0x48] = "Port is off: Recovery UDL.",
+	[0x49] = "Port is off: Recovery PG Event.",
+	[0x4A] = "Port is off: Recovery OVL.",
+	[0x4B] = "Port is off: Recovery SC.",
+	[0x4C] = "Port is off: Recovery Voltage injection.",
+	[0x80] = "2P Port delivering non-IEEE.",
+	[0x81] = "2P Port delivering IEEE.",
+	[0x82] = "4P Port that deliver only 2 Pair non-IEEE.",
+	[0x83] = "4P Port delivering 2P non-IEEE.",
+	[0x84] = "4P Port delivering 4P non-IEEE.",
+	[0x85] = "4P Port delivering 2P IEEE SSPD.",
+	[0x86] = "4P Port delivering 4P IEEE SSPD.",
+	[0x87] = "4P Port delivering 2P IEEE DSPD in the first phase.",
+	[0x88] = "4P Port delivering 2P IEEE DSPD.",
+	[0x89] = "4P Port delivering 4P IEEE DSPD.",
+	[0x90] = "Force Power BT 2P.",
+	[0x91] = "Force Power BT 4P.",
+	[0xA0] = "Force Power BT error.",
+	[0xA7] = "Connection Check error.",
+	[0xA8] = "Open Port is not connected.",
+};
+
 static int pd692x0_ethtool_get_status(struct pse_controller_dev *pcdev,
 				      unsigned long id,
 				      struct netlink_ext_ack *extack,
@@ -470,6 +529,22 @@ static int pd692x0_ethtool_get_status(struct pse_controller_dev *pcdev,
 		status->c33_admin_state = ETHTOOL_C33_PSE_ADMIN_STATE_DISABLED;
 
 	priv->admin_state[id] = status->c33_admin_state;
+
+	status->c33_pw_status_msg = status_msg_list[buf.sub[0]];
+
+	status->c33_actual_pw = (buf.data[0] << 4 | buf.data[1]) * 100;
+
+	memset(&buf, 0, sizeof(buf));
+	msg = pd692x0_msg_template_list[PD692X0_MSG_GET_PORT_CLASS];
+	msg.sub[2] = id;
+	ret = pd692x0_sendrecv_msg(priv, &msg, &buf);
+	if (ret < 0)
+		return ret;
+
+	if (buf.data[3] >> 4 < 8)
+		status->c33_pw_class = buf.data[3] >> 4;
+
+	status->c33_pw_limit = (buf.data[4] << 4 | buf.data[5]) * 100;
 
 	return 0;
 }

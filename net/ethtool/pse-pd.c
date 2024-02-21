@@ -79,6 +79,15 @@ static int pse_reply_size(const struct ethnl_req_info *req_base,
 		len += nla_total_size(sizeof(u32)); /* _C33_PSE_ADMIN_STATE */
 	if (st->c33_pw_status > 0)
 		len += nla_total_size(sizeof(u32)); /* _C33_PSE_PW_D_STATUS */
+	if (st->c33_pw_class > 0)
+		len += nla_total_size(sizeof(u32)); /* _C33_PSE_PW_CLASS */
+	if (st->c33_pw_limit > 0)
+		len += nla_total_size(sizeof(u32)); /* _C33_PSE_PW_LIMIT */
+	if (st->c33_actual_pw > 0)
+		len += nla_total_size(sizeof(u32)); /* _C33_PSE_ACTUAL_PW */
+	if (st->c33_pw_status_msg)
+		/* _C33_PSE_PW_STATUS_MSG */
+		len += nla_total_size(strlen(st->c33_pw_status_msg) + 1);
 
 	return len;
 }
@@ -108,6 +117,26 @@ static int pse_fill_reply(struct sk_buff *skb,
 	if (st->c33_pw_status > 0 &&
 	    nla_put_u32(skb, ETHTOOL_A_C33_PSE_PW_D_STATUS,
 			st->c33_pw_status))
+		return -EMSGSIZE;
+
+	if (st->c33_pw_class > 0 &&
+	    nla_put_u32(skb, ETHTOOL_A_C33_PSE_PW_CLASS,
+			st->c33_pw_class))
+		return -EMSGSIZE;
+
+	if (st->c33_pw_limit > 0 &&
+	    nla_put_u32(skb, ETHTOOL_A_C33_PSE_PW_LIMIT,
+			st->c33_pw_limit))
+		return -EMSGSIZE;
+
+	if (st->c33_actual_pw > 0 &&
+	    nla_put_u32(skb, ETHTOOL_A_C33_PSE_ACTUAL_PW,
+			st->c33_actual_pw))
+		return -EMSGSIZE;
+
+	if (st->c33_pw_status_msg &&
+	    nla_put_string(skb, ETHTOOL_A_C33_PSE_PW_STATUS_MSG,
+			   st->c33_pw_status_msg))
 		return -EMSGSIZE;
 
 	return 0;

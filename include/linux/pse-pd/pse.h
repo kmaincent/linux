@@ -42,6 +42,10 @@ struct pse_control_status {
 	enum ethtool_podl_pse_pw_d_status podl_pw_status;
 	enum ethtool_c33_pse_admin_state c33_admin_state;
 	enum ethtool_c33_pse_pw_d_status c33_pw_status;
+	const char *c33_pw_status_msg;
+	u32 c33_pw_class;
+	u32 c33_pw_limit;
+	u32 c33_actual_pw;
 };
 
 /**

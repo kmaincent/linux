@@ -536,6 +536,7 @@ struct ptp_clock *phydev_ptp_clock_register(struct ptp_clock_info *info,
 
 	ptp->phc_source = HWTSTAMP_SOURCE_PHYLIB;
 	ptp->phydev = phydev;
+pr_err("%s : %d phydev %pK\n", __func__, __LINE__, phydev);
 
 	return ptp;
 }
@@ -656,16 +657,19 @@ bool netdev_support_hwtstamp(struct net_device *dev,
 	netdev_for_each_ptp_clock_start(dev, index, tmp_ptp, 0) {
 		if (tmp_ptp != hwtstamp->ptp)
 			continue;
+pr_err("%s : %d index %d\n", __func__, __LINE__, ptp_clock_index(tmp_ptp));
 
 		if (ptp_clock_from_phylib(hwtstamp->ptp) &&
 		    hwtstamp->qualifier == HWTSTAMP_PROVIDER_QUALIFIER_PRECISE)
 			return true;
+pr_err("%s : %d\n", __func__, __LINE__);
 
 		if (ptp_clock_from_netdev(hwtstamp->ptp) &&
 		    netdev_support_hwtstamp_qualifier(dev,
 						      hwtstamp->qualifier))
 			return true;
 
+pr_err("%s : %d\n", __func__, __LINE__);
 		return false;
 	}
 

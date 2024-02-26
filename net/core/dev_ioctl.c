@@ -197,6 +197,7 @@ int net_hwtstamp_validate(const struct kernel_hwtstamp_config *cfg)
 
 	tx_type = cfg->tx_type;
 	rx_filter = cfg->rx_filter;
+pr_err("%s : %d, tx %d rx %d\n", __func__, __LINE__, tx_type, rx_filter);
 
 	switch (tx_type) {
 	case HWTSTAMP_TX_OFF:

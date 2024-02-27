@@ -94,6 +94,23 @@ struct pd692x0_priv {
 	enum ethtool_c33_pse_admin_state admin_state[PD692X0_MAX_PIS];
 };
 
+// DEBUG
+static void pd692x0_dump_msg(struct pd692x0_msg *msg)
+{
+	int i;
+	u8 *data = (u8 *)msg;
+
+	for (i = 0; i < sizeof(*msg); i++)
+		printk(KERN_CONT "%02i ", i);
+
+	printk(KERN_CONT "\n");
+
+	for (i = 0; i < sizeof(*msg); i++)
+		printk(KERN_CONT "%02x ", *(data + i));
+
+	printk(KERN_CONT "\n");
+}
+
 /* Template list of communication messages. The non-null bytes defined here
  * constitute the fixed portion of the messages. The remaining bytes will
  * be configured later within the functions. Refer to the "PD692x0 BT Serial
@@ -312,6 +329,9 @@ static int pd692x0_sendrecv_msg(struct pd692x0_priv *priv,
 	struct device *dev = &priv->client->dev;
 	int ret;
 
+	pr_err("SEND \n");
+	pd692x0_dump_msg(msg);
+
 	ret = pd692x0_send_msg(priv, msg);
 	if (ret)
 		return ret;
@@ -319,6 +339,9 @@ static int pd692x0_sendrecv_msg(struct pd692x0_priv *priv,
 	ret = pd692x0_recv_msg(priv, msg, buf);
 	if (ret)
 		return ret;
+
+	pr_err("RCV \n");
+	pd692x0_dump_msg(buf);
 
 	if (msg->echo != buf->echo) {
 		dev_err(dev,
@@ -365,6 +388,7 @@ static int pd692x0_pi_enable(struct pse_controller_dev *pcdev, int id)
 	struct pd692x0_priv *priv = to_pd692x0_priv(pcdev);
 	struct pd692x0_msg msg, buf = {0};
 	int ret;
+pr_err("%s : %d, id %d\n", __func__, __LINE__, id);
 
 	ret = pd692x0_fw_unavailable(priv);
 	if (ret)
@@ -372,6 +396,7 @@ static int pd692x0_pi_enable(struct pse_controller_dev *pcdev, int id)
 
 	if (priv->admin_state[id] == ETHTOOL_C33_PSE_ADMIN_STATE_ENABLED)
 		return 0;
+pr_err("%s : %d\n", __func__, __LINE__);
 
 	msg = pd692x0_msg_template_list[PD692X0_MSG_SET_PORT_PARAM];
 	msg.data[0] = 0x1;
@@ -391,12 +416,14 @@ static int pd692x0_pi_disable(struct pse_controller_dev *pcdev, int id)
 	struct pd692x0_msg msg, buf = {0};
 	int ret;
 
+pr_err("%s : %d, id %d\n", __func__, __LINE__, id);
 	ret = pd692x0_fw_unavailable(priv);
 	if (ret)
 		return ret;
 
 	if (priv->admin_state[id] == ETHTOOL_C33_PSE_ADMIN_STATE_DISABLED)
 		return 0;
+pr_err("%s : %d\n", __func__, __LINE__);
 
 	msg = pd692x0_msg_template_list[PD692X0_MSG_SET_PORT_PARAM];
 	msg.data[0] = 0x0;
@@ -416,6 +443,7 @@ static int pd692x0_pi_is_enabled(struct pse_controller_dev *pcdev, int id)
 	struct pd692x0_msg msg, buf = {0};
 	int ret;
 
+pr_err("%s : %d, id %d\n", __func__, __LINE__, id);
 	ret = pd692x0_fw_unavailable(priv);
 	if (ret)
 		return ret;
@@ -427,9 +455,11 @@ static int pd692x0_pi_is_enabled(struct pse_controller_dev *pcdev, int id)
 		return ret;
 
 	if (buf.sub[1]) {
+pr_err("%s : %d\n", __func__, __LINE__);
 		priv->admin_state[id] = ETHTOOL_C33_PSE_ADMIN_STATE_ENABLED;
 		return 1;
 	} else {
+pr_err("%s : %d\n", __func__, __LINE__);
 		priv->admin_state[id] = ETHTOOL_C33_PSE_ADMIN_STATE_DISABLED;
 		return 0;
 	}
@@ -876,6 +906,9 @@ static enum fw_upload_err pd692x0_fw_reset(const struct i2c_client *client)
 			break;
 	}
 
+	pr_err("RCV \n");
+	pd692x0_dump_msg(&buf);
+
 	/* Is the reply a successful report message */
 	if (buf.key != PD692X0_KEY_TLM || buf.echo != 0xff ||
 	    buf.sub[0] & 0x01) {
@@ -1133,6 +1166,9 @@ static int pd692x0_i2c_probe(struct i2c_client *client)
 		return -EIO;
 	}
 
+	pr_err("RCV \n");
+	pd692x0_dump_msg(&buf);
+
 	/* Probe has been already run and the status dumped */
 	if (!memcmp(&buf, &zero, sizeof(buf))) {
 		/* Ask again the controller status */
@@ -1143,6 +1179,9 @@ static int pd692x0_i2c_probe(struct i2c_client *client)
 			return ret;
 		}
 	}
+
+	pr_err("RCV \n");
+	pd692x0_dump_msg(&buf);
 
 	if (buf.key != 0x03 || buf.sub[0] & 0x01) {
 		dev_err(dev, "PSE controller error\n");

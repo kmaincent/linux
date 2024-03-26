@@ -206,6 +206,7 @@ static int pse_pi_is_enabled(struct regulator_dev *rdev)
 	struct pse_controller_dev *pcdev = rdev_get_drvdata(rdev);
 	const struct pse_controller_ops *ops;
 	int id, ret;
+pr_err("%s : %d\n", __func__, __LINE__);
 
 	ops = pcdev->ops;
 	if (!ops->pi_is_enabled)
@@ -224,6 +225,7 @@ static int pse_pi_enable(struct regulator_dev *rdev)
 	struct pse_controller_dev *pcdev = rdev_get_drvdata(rdev);
 	const struct pse_controller_ops *ops;
 	int id, ret;
+pr_err("%s : %d\n", __func__, __LINE__);
 
 	ops = pcdev->ops;
 	if (!ops->pi_enable)
@@ -244,6 +246,7 @@ static int pse_pi_disable(struct regulator_dev *rdev)
 	struct pse_controller_dev *pcdev = rdev_get_drvdata(rdev);
 	const struct pse_controller_ops *ops;
 	int id, ret;
+pr_err("%s : %d\n", __func__, __LINE__);
 
 	ops = pcdev->ops;
 	if (!ops->pi_disable)
@@ -355,6 +358,7 @@ int pse_controller_register(struct pse_controller_dev *pcdev)
 
 		snprintf(reg_name, reg_name_len, "pse-%s_pi%d",
 			 dev_name(pcdev->dev), i);
+pr_err("%s : %d reg name %s\n", __func__, __LINE__, reg_name);
 
 		ret = devm_pse_pi_regulator_register(pcdev, reg_name, i);
 		if (ret)

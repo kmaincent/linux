@@ -2400,6 +2400,7 @@ struct net_device {
 	/** @page_pools: page pools created for this netdevice */
 	struct hlist_head	page_pools;
 #endif
+	struct pse_control	*psec;
 };
 #define to_net_dev(d) container_of(d, struct net_device, dev)
 

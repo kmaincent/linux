@@ -57,14 +57,17 @@ static int tps23881_pi_enable(struct pse_controller_dev *pcdev, int id)
 	u16 val;
 	int ret;
 
+pr_err("%s : %d id %d\n", __func__, __LINE__, id);
 	if (id >= TPS23881_MAX_CHANS)
 		return -ERANGE;
 
 	ret = i2c_smbus_read_word_data(client, TPS23881_REG_PW_STATUS);
 	if (ret < 0)
 		return ret;
+pr_err("%s : %d reg 0x%x val 0x%x\n", __func__, __LINE__, TPS23881_REG_PW_STATUS, ret);
 
 	chan = priv->port[id].chan[0];
+pr_err("%s : %d chan %d\n", __func__, __LINE__, chan);
 	if (chan < 4)
 		val = (u16)(ret | BIT(chan));
 	else
@@ -72,12 +75,14 @@ static int tps23881_pi_enable(struct pse_controller_dev *pcdev, int id)
 
 	if (priv->port[id].is_4p) {
 		chan = priv->port[id].chan[1];
+pr_err("%s : %d chan %d\n", __func__, __LINE__, chan);
 		if (chan < 4)
 			val |= BIT(chan);
 		else
 			val |= BIT(chan + 4);
 	}
 
+pr_err("%s : %d reg 0x%x val 0x%x\n", __func__, __LINE__, TPS23881_REG_PW_EN, val);
 	ret = i2c_smbus_write_word_data(client, TPS23881_REG_PW_EN, val);
 	if (ret)
 		return ret;
@@ -93,6 +98,7 @@ static int tps23881_pi_disable(struct pse_controller_dev *pcdev, int id)
 	u16 val;
 	int ret;
 
+pr_err("%s : %d chan %d\n", __func__, __LINE__, id);
 	if (id >= TPS23881_MAX_CHANS)
 		return -ERANGE;
 
@@ -100,7 +106,9 @@ static int tps23881_pi_disable(struct pse_controller_dev *pcdev, int id)
 	if (ret < 0)
 		return ret;
 
+pr_err("%s : %d reg 0x%x val 0x%x\n", __func__, __LINE__, TPS23881_REG_PW_STATUS, ret);
 	chan = priv->port[id].chan[0];
+pr_err("%s : %d, id %d chan %d\n", __func__, __LINE__, id, chan);
 	if (chan < 4)
 		val = (u16)(ret | BIT(chan + 4));
 	else
@@ -108,11 +116,13 @@ static int tps23881_pi_disable(struct pse_controller_dev *pcdev, int id)
 
 	if (priv->port[id].is_4p) {
 		chan = priv->port[id].chan[1];
+pr_err("%s : %d, id %d chan %d\n", __func__, __LINE__, id, chan);
 		if (chan < 4)
 			val |= BIT(chan + 4);
 		else
 			val |= BIT(chan + 8);
 	}
+pr_err("%s : %d reg 0x%x val 0x%x\n", __func__, __LINE__, TPS23881_REG_PW_EN, val);
 
 	ret = i2c_smbus_write_word_data(client, TPS23881_REG_PW_EN, val);
 	if (ret)
@@ -132,8 +142,10 @@ static int tps23881_pi_is_enabled(struct pse_controller_dev *pcdev, int id)
 	ret = i2c_smbus_read_word_data(client, TPS23881_REG_PW_STATUS);
 	if (ret < 0)
 		return ret;
+pr_err("%s : %d reg 0x%x ret 0x%x\n", __func__, __LINE__, TPS23881_REG_PW_STATUS, ret);
 
 	chan = priv->port[id].chan[0];
+pr_err("%s : %d chan %d\n", __func__, __LINE__, chan);
 	if (chan < 4)
 		enabled = ret & BIT(chan);
 	else
@@ -141,12 +153,14 @@ static int tps23881_pi_is_enabled(struct pse_controller_dev *pcdev, int id)
 
 	if (priv->port[id].is_4p) {
 		chan = priv->port[id].chan[1];
+pr_err("%s : %d chan %d\n", __func__, __LINE__, chan);
 		if (chan < 4)
 			enabled &= !!(ret & BIT(chan));
 		else
 			enabled &= !!(ret & BIT(chan + 4));
 	}
 
+pr_err("%s : %d enabled %d\n", __func__, __LINE__, enabled);
 	/* Return enabled status only if both channel are on this state */
 	return enabled;
 }
@@ -165,8 +179,10 @@ static int tps23881_ethtool_get_status(struct pse_controller_dev *pcdev,
 	ret = i2c_smbus_read_word_data(client, TPS23881_REG_PW_STATUS);
 	if (ret < 0)
 		return ret;
+pr_err("%s : %d ret 0x%x\n", __func__, __LINE__, ret);
 
 	chan = priv->port[id].chan[0];
+pr_err("%s : %d, id %ld chan %d\n", __func__, __LINE__, id, chan);
 	if (chan < 4) {
 		enabled = ret & BIT(chan);
 		delivering = ret & BIT(chan + 4);
@@ -177,6 +193,7 @@ static int tps23881_ethtool_get_status(struct pse_controller_dev *pcdev,
 
 	if (priv->port[id].is_4p) {
 		chan = priv->port[id].chan[1];
+pr_err("%s : %d, id %ld chan %d\n", __func__, __LINE__, id, chan);
 		if (chan < 4) {
 			enabled &= !!(ret & BIT(chan));
 			delivering &= !!(ret & BIT(chan + 4));
@@ -185,6 +202,7 @@ static int tps23881_ethtool_get_status(struct pse_controller_dev *pcdev,
 			delivering &= !!(ret & BIT(chan + 8));
 		}
 	}
+pr_err("%s : %d en %d delivering %d\n", __func__, __LINE__, enabled, delivering);
 
 	/* Return delivering status only if both channel are on this state */
 	if (delivering)
@@ -311,6 +329,7 @@ tps23881_match_port_matrix(struct pse_pi *pi, int pi_id,
 		pr_err("tps23881: channel %d already used\n", ret);
 		return -ENODEV;
 	}
+pr_err("%s : %d ret %d\n", __func__, __LINE__, ret);
 
 	port_matrix[pi_id].hw_chan[0] = ret;
 	port_matrix[pi_id].exist = true;
@@ -351,12 +370,14 @@ tps23881_get_unused_chan(struct tps23881_port_matrix port_matrix[TPS23881_MAX_CH
 		for (j = 0; j < port_cnt; j++) {
 			if (port_matrix[j].hw_chan[0] == i) {
 				used = true;
+pr_err("%s : %d\n", __func__, __LINE__);
 				break;
 			}
 
 			if (port_matrix[j].is_4p &&
 			    port_matrix[j].hw_chan[1] == i) {
 				used = true;
+pr_err("%s : %d\n", __func__, __LINE__);
 				break;
 			}
 		}
@@ -404,6 +425,9 @@ tps23881_sort_port_matrix(struct tps23881_port_matrix port_matrix[TPS23881_MAX_C
 		 */
 		tmp_port_matrix[port_cnt].lgcl_chan[0] = (*cnt)++;
 		tmp_port_matrix[port_cnt].lgcl_chan[1] = (*cnt)++;
+pr_err("%s : %d, port %d , pi_id %d, hw_chan0 %d hw_chan1 %d, lgcl_chan0 %d, lgcl chan1 %d\n",
+__func__, __LINE__, port_cnt, i, port_matrix[i].hw_chan[0], port_matrix[i].hw_chan[1],
+tmp_port_matrix[port_cnt].lgcl_chan[0], tmp_port_matrix[port_cnt].lgcl_chan[1]);
 
 		port_cnt++;
 	}
@@ -424,9 +448,13 @@ tps23881_sort_port_matrix(struct tps23881_port_matrix port_matrix[TPS23881_MAX_C
 		tmp_port_matrix[port_cnt].pi_id = i;
 		tmp_port_matrix[port_cnt].lgcl_chan[0] = (*cnt)++;
 		tmp_port_matrix[port_cnt].hw_chan[0] = port_matrix[i].hw_chan[0];
+pr_err("%s : %d, port %d , pi_id %d, hw_chan0 %d hw_chan1 %d, lgcl_chan0 %d, lgcl chan1 %d\n",
+__func__, __LINE__, port_cnt, i, port_matrix[i].hw_chan[0], port_matrix[i].hw_chan[1],
+tmp_port_matrix[port_cnt].lgcl_chan[0], tmp_port_matrix[port_cnt].lgcl_chan[1]);
 
 		port_cnt++;
 	}
+pr_err("%s : %d grp1 cnt %d cnt grp2 %d\n", __func__, __LINE__, cnt_4ch_grp1, cnt_4ch_grp2);
 
 	/* Complete the rest of the first 4 port group matrix even if
 	 * channels are unused
@@ -437,6 +465,7 @@ tps23881_sort_port_matrix(struct tps23881_port_matrix port_matrix[TPS23881_MAX_C
 			pr_err("tps23881: port matrix issue, no chan available\n");
 			return ret;
 		}
+pr_err("%s : %d port %d  lgcl_chan %d hw_chan %d\n", __func__, __LINE__, port_cnt, cnt_4ch_grp1, ret);
 
 		if (port_cnt >= TPS23881_MAX_CHANS) {
 			pr_err("tps23881: wrong number of channels\n");
@@ -457,6 +486,7 @@ tps23881_sort_port_matrix(struct tps23881_port_matrix port_matrix[TPS23881_MAX_C
 			pr_err("tps23881: port matrix issue, no chan available\n");
 			return -ENODEV;
 		}
+pr_err("%s : %d port %d  lgcl_chan %d hw_chan %d\n", __func__, __LINE__, port_cnt, cnt_4ch_grp2, ret);
 
 		if (port_cnt >= TPS23881_MAX_CHANS) {
 			pr_err("tps23881: wrong number of channels\n");
@@ -514,6 +544,7 @@ tps23881_write_port_matrix(struct tps23881_priv *priv,
 		val |= hw_chan << (lgcl_chan * 2);
 	}
 
+pr_err("%s : %d reg 0x%x val 0x%x\n", __func__, __LINE__, TPS23881_REG_PORT_MAP, val);
 	/* Write hardware ports matrix */
 	ret = i2c_smbus_write_word_data(client, TPS23881_REG_PORT_MAP, val);
 	if (ret)
@@ -552,6 +583,7 @@ tps23881_set_ports_conf(struct tps23881_priv *priv,
 		else
 			val |= 0x3 << ((port_matrix[i].lgcl_chan[0] / 2) * 4);
 	}
+pr_err("%s : %d reg 0x%x val 0x%x\n", __func__, __LINE__, TPS23881_REG_PORT_POWER, val);
 	ret = i2c_smbus_write_word_data(client, TPS23881_REG_PORT_POWER, val);
 	if (ret)
 		return ret;
@@ -568,6 +600,7 @@ tps23881_set_ports_conf(struct tps23881_priv *priv,
 			val |= BIT(port_matrix[i].lgcl_chan[1]) |
 			       BIT(port_matrix[i].lgcl_chan[1] + 4);
 	}
+pr_err("%s : %d reg 0x%x val 0x%x\n", __func__, __LINE__, TPS23881_REG_DET_CLA_EN, val);
 	ret = i2c_smbus_write_word_data(client, TPS23881_REG_DET_CLA_EN, val);
 	if (ret)
 		return ret;
@@ -750,6 +783,7 @@ static int tps23881_i2c_probe(struct i2c_client *client)
 	if (ret < 0)
 		return ret;
 
+pr_err("%s : %d reg 0x%x 0x%x\n", __func__, __LINE__, TPS23881_REG_DEVID, ret);
 	if (ret != 0x22) {
 		dev_err(dev, "Wrong device ID\n");
 		return -ENXIO;

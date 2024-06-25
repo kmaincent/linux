@@ -114,3 +114,69 @@ int ptp_clock_index(struct ptp_clock *ptp)
 	return ptp->index;
 }
 EXPORT_SYMBOL(ptp_clock_index);
+
+struct ptp_clock *netdev_ptp_clock_find(struct net_device *dev,
+					unsigned long *indexp)
+{
+	struct ptp_clock *ptp;
+	unsigned long index;
+
+	xa_for_each_start(&ptp_clocks_map, index, ptp, *indexp) {
+		if ((ptp->phc_source == HWTSTAMP_SOURCE_NETDEV &&
+		     ptp->netdev == dev) ||
+		    (ptp->phc_source == HWTSTAMP_SOURCE_PHYLIB &&
+		     ptp->phydev->attached_dev == dev)) {
+			*indexp = index;
+			return ptp;
+		}
+	}
+
+	return NULL;
+};
+
+bool
+netdev_support_hwtstamp_qualifier(struct net_device *dev,
+				  enum hwtstamp_provider_qualifier qualifier)
+{
+	const struct ethtool_ops *ops = dev->ethtool_ops;
+
+	if (!ops)
+		return false;
+
+	/* Return true with precise qualifier and with NIC without
+	 * qualifier description to not break the old behavior.
+	 */
+	if (!ops->supported_hwtstamp_qualifiers &&
+	    qualifier == HWTSTAMP_PROVIDER_QUALIFIER_PRECISE)
+		return true;
+
+	if (ops->supported_hwtstamp_qualifiers & BIT(qualifier))
+		return true;
+
+	return false;
+}
+
+bool netdev_support_hwtstamp(struct net_device *dev,
+			     struct hwtstamp_provider *hwtstamp)
+{
+	struct ptp_clock *tmp_ptp;
+	unsigned long index = 0;
+
+	netdev_for_each_ptp_clock_start(dev, index, tmp_ptp, 0) {
+		if (tmp_ptp != hwtstamp->ptp)
+			continue;
+
+		if (ptp_clock_from_phylib(hwtstamp->ptp) &&
+		    hwtstamp->qualifier == HWTSTAMP_PROVIDER_QUALIFIER_PRECISE)
+			return true;
+
+		if (ptp_clock_from_netdev(hwtstamp->ptp) &&
+		    netdev_support_hwtstamp_qualifier(dev,
+						      hwtstamp->qualifier))
+			return true;
+
+		return false;
+	}
+
+	return false;
+}

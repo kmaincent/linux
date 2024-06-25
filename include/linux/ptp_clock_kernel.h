@@ -453,6 +453,45 @@ void ptp_clock_put(struct device *dev, struct ptp_clock *ptp);
 void remove_hwtstamp_provider(struct rcu_head *rcu_head);
 
 /**
+ * netdev_ptp_clock_find() - obtain the next PTP clock in the netdev
+ *			     topology
+ *
+ * @dev:    Pointer of the net device.
+ * @indexp:  Pointer of ptp clock index start point.
+ *
+ * Return: Pointer of the PTP clock found, NULL otherwise.
+ */
+
+struct ptp_clock *netdev_ptp_clock_find(struct net_device *dev,
+					unsigned long *indexp);
+
+/**
+ * netdev_support_hwtstamp_qualifier() - Verify if the net device support the
+ *					 hwtstamp qualifier
+ *
+ * @dev:        Pointer of the net device.
+ * @qualifier:  hwtstamp provider qualifier.
+ *
+ * Return: True if the net device support the htstamp qualifier false otherwise.
+ */
+
+bool netdev_support_hwtstamp_qualifier(struct net_device *dev,
+				       enum hwtstamp_provider_qualifier qualifier);
+
+/**
+ * netdev_support_hwtstamp() - Verify if the hwtstamp belong to the netdev
+ *			       topology
+ *
+ * @dev:       Pointer of the net device
+ * @hwtstamp:  Pointer of the hwtstamp provider
+ *
+ * Return: True if the hwtstamp belong to the netdev topology false otherwise.
+ */
+
+bool netdev_support_hwtstamp(struct net_device *dev,
+			     struct hwtstamp_provider *hwtstamp);
+
+/**
  * ptp_find_pin() - obtain the pin index of a given auxiliary function
  *
  * The caller must hold ptp_clock::pincfg_mux.  Drivers do not have
@@ -540,6 +579,16 @@ static inline void ptp_clock_put(struct device *dev, struct ptp_clock *ptp)
 static inline struct ptp_clock *ptp_clock_get_by_index(struct device *dev,
 						       int index)
 { return NULL; }
+static inline struct ptp_clock *netdev_ptp_clock_find(struct net_device *dev,
+						      unsigned long *indexp)
+{ return NULL; }
+static inline bool
+netdev_support_hwtstamp_qualifier(struct net_device *dev,
+				  enum hwtstamp_provider_qualifier qualifier)
+{ return false; }
+static inline bool netdev_support_hwtstamp(struct net_device *dev,
+					   struct hwtstamp_provider *hwtst)
+{ return false; }
 static inline void remove_hwtstamp_provider(struct rcu_head *rcu_head)
 { return; }
 static inline int ptp_find_pin(struct ptp_clock *ptp,
@@ -555,6 +604,10 @@ static inline int ptp_schedule_worker(struct ptp_clock *ptp,
 static inline void ptp_cancel_worker_sync(struct ptp_clock *ptp)
 { }
 #endif
+
+#define netdev_for_each_ptp_clock_start(dev, index, entry, start) \
+	for (index = start, entry = netdev_ptp_clock_find(dev, &index); \
+	     entry; index++, entry = netdev_ptp_clock_find(dev, &index))
 
 #if IS_BUILTIN(CONFIG_PTP_1588_CLOCK)
 /*

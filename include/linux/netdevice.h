@@ -2406,9 +2406,10 @@ struct net_device {
 	/** @page_pools: page pools created for this netdevice */
 	struct hlist_head	page_pools;
 #endif
-
 	/** @irq_moder: dim parameters used if IS_ENABLED(CONFIG_DIMLIB). */
 	struct dim_irq_moder	*irq_moder;
+
+	struct pse_control	*psec;
 };
 #define to_net_dev(d) container_of(d, struct net_device, dev)
 

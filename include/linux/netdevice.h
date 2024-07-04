@@ -2398,6 +2398,7 @@ struct net_device {
 
 	/** @irq_moder: dim parameters used if IS_ENABLED(CONFIG_DIMLIB). */
 	struct dim_irq_moder	*irq_moder;
+	struct pse_control	*psec;
 
 	u8			priv[] ____cacheline_aligned
 				       __counted_by(priv_len);

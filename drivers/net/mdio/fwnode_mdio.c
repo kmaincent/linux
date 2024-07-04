@@ -30,6 +30,7 @@ fwnode_find_pse_control(struct fwnode_handle *fwnode)
 		return NULL;
 
 	psec = of_pse_control_get(np);
+pr_err("%s : %d %pe\n", __func__, __LINE__, psec);
 	if (PTR_ERR(psec) == -ENOENT)
 		return NULL;
 

@@ -31,23 +31,18 @@ const struct nla_policy ethnl_pse_get_policy[ETHTOOL_A_PSE_HEADER + 1] = {
 	[ETHTOOL_A_PSE_HEADER] = NLA_POLICY_NESTED(ethnl_header_policy_phy),
 };
 
-static int pse_get_pse_attributes(struct phy_device *phydev,
+static int pse_get_pse_attributes(struct net_device *dev,
 				  struct netlink_ext_ack *extack,
 				  struct pse_reply_data *data)
 {
-	if (!phydev) {
-		NL_SET_ERR_MSG(extack, "No PHY found");
-		return -EOPNOTSUPP;
-	}
-
-	if (!phydev->psec) {
+	if (!dev->psec) {
 		NL_SET_ERR_MSG(extack, "No PSE is attached");
 		return -EOPNOTSUPP;
 	}
 
 	memset(&data->status, 0, sizeof(data->status));
 
-	return pse_ethtool_get_status(phydev->psec, extack, &data->status);
+	return pse_ethtool_get_status(dev->psec, extack, &data->status);
 }
 
 static int pse_prepare_data(const struct ethnl_req_info *req_base,
@@ -69,7 +64,7 @@ static int pse_prepare_data(const struct ethnl_req_info *req_base,
 	if (IS_ERR(phydev))
 		return -ENODEV;
 
-	ret = pse_get_pse_attributes(phydev, info->extack, data);
+	ret = pse_get_pse_attributes(dev, info->extack, data);
 
 	ethnl_ops_complete(dev);
 
@@ -222,29 +217,24 @@ const struct nla_policy ethnl_pse_set_policy[ETHTOOL_A_PSE_MAX + 1] = {
 };
 
 static int
-ethnl_set_pse_validate(struct phy_device *phydev, struct genl_info *info)
+ethnl_set_pse_validate(struct net_device *dev, struct genl_info *info)
 {
 	struct nlattr **tb = info->attrs;
 
-	if (IS_ERR_OR_NULL(phydev)) {
-		NL_SET_ERR_MSG(info->extack, "No PHY is attached");
-		return -EOPNOTSUPP;
-	}
-
-	if (!phydev->psec) {
-		NL_SET_ERR_MSG(info->extack, "No PSE is attached");
+	if (!dev->psec) {
+		NL_SET_ERR_MSG(info->extack, "No PSE is attached to netdev");
 		return -EOPNOTSUPP;
 	}
 
 	if (tb[ETHTOOL_A_PODL_PSE_ADMIN_CONTROL] &&
-	    !pse_has_podl(phydev->psec)) {
+	    !pse_has_podl(dev->psec)) {
 		NL_SET_ERR_MSG_ATTR(info->extack,
 				    tb[ETHTOOL_A_PODL_PSE_ADMIN_CONTROL],
 				    "setting PoDL PSE admin control not supported");
 		return -EOPNOTSUPP;
 	}
 	if (tb[ETHTOOL_A_C33_PSE_ADMIN_CONTROL] &&
-	    !pse_has_c33(phydev->psec)) {
+	    !pse_has_c33(dev->psec)) {
 		NL_SET_ERR_MSG_ATTR(info->extack,
 				    tb[ETHTOOL_A_C33_PSE_ADMIN_CONTROL],
 				    "setting C33 PSE admin control not supported");
@@ -257,13 +247,11 @@ ethnl_set_pse_validate(struct phy_device *phydev, struct genl_info *info)
 static int
 ethnl_set_pse(struct ethnl_req_info *req_info, struct genl_info *info)
 {
+	struct net_device *dev = req_info->dev;
 	struct nlattr **tb = info->attrs;
-	struct phy_device *phydev;
-	int ret;
+	int ret = 0;
 
-	phydev = ethnl_req_get_phydev(req_info, tb[ETHTOOL_A_PSE_HEADER],
-				      info->extack);
-	ret = ethnl_set_pse_validate(phydev, info);
+	ret = ethnl_set_pse_validate(dev, info);
 	if (ret)
 		return ret;
 
@@ -271,7 +259,7 @@ ethnl_set_pse(struct ethnl_req_info *req_info, struct genl_info *info)
 		unsigned int pw_limit;
 
 		pw_limit = nla_get_u32(tb[ETHTOOL_A_C33_PSE_AVAIL_PW_LIMIT]);
-		ret = pse_ethtool_set_pw_limit(phydev->psec, info->extack,
+		ret = pse_ethtool_set_pw_limit(dev->psec, info->extack,
 					       pw_limit);
 		if (ret)
 			return ret;
@@ -290,7 +278,7 @@ ethnl_set_pse(struct ethnl_req_info *req_info, struct genl_info *info)
 		/* pse_ethtool_set_config() will do nothing if the config
 		 * is zero
 		 */
-		ret = pse_ethtool_set_config(phydev->psec, info->extack,
+		ret = pse_ethtool_set_config(dev->psec, info->extack,
 					     &config);
 		if (ret)
 			return ret;

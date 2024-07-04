@@ -356,6 +356,7 @@ static int pse_pi_set_current_limit(struct regulator_dev *rdev, int min_uA,
 	ops = pcdev->ops;
 	if (!ops->pi_set_current_limit)
 		return -EOPNOTSUPP;
+pr_err("%s : %d\n", __func__, __LINE__);
 
 	id = rdev_get_id(rdev);
 	mutex_lock(&pcdev->lock);
@@ -882,6 +883,7 @@ int pse_ethtool_set_pw_limit(struct pse_control *psec,
 	tmp_64 *= 1000000000ull;
 	/* uA = mW * 1000000000 / uV */
 	uA = DIV_ROUND_CLOSEST_ULL(tmp_64, uV);
+	pr_err("%s : %d, mA %d pw_lim %d, uV %d\n", __func__, __LINE__, uA, pw_limit, uV);
 
 	return regulator_set_current_limit(psec->ps, 0, uA);
 }

@@ -684,6 +684,8 @@ static int pd692x0_ethtool_get_status(struct pse_controller_dev *pcdev,
 	ret = pd692x0_pi_get_pw_from_table(buf.data[0], buf.data[1]);
 	if (ret < 0)
 		return ret;
+
+pr_err("%s : %d, id %d, %d %d pw %d\n", __func__, __LINE__, msg.sub[2] = id, buf.data[0], buf.data[1], ret);
 	status->c33_avail_pw_limit = ret;
 
 	memset(&buf, 0, sizeof(buf));
@@ -1054,10 +1056,12 @@ static int pd692x0_pi_set_current_limit(struct pse_controller_dev *pcdev,
 	tmp_64 *= max_uA;
 	/* mW = uV * uA / 1000000000 */
 	mW = DIV_ROUND_CLOSEST_ULL(tmp_64, 1000000000);
+	pr_err("%s : %d, mV %d max_mA %d, pw %d\n", __func__, __LINE__, uV, max_uA, mW);
 	ret = pd692x0_pi_set_pw_from_table(dev, &msg, mW);
 	if (ret)
 		return ret;
 
+	pr_err("%s : %d, id %d %d %d\n", __func__, __LINE__, msg.sub[2], msg.data[2], msg.data[3]);
 	return pd692x0_sendrecv_msg(priv, &msg, &buf);
 }
 

@@ -249,8 +249,10 @@ int marvell_tai_get(struct marvell_tai **taip, struct phy_device *phydev)
 	tai->caps.gettimex64 = marvell_tai_gettimex64;
 	tai->caps.settime64 = marvell_tai_settime64;
 	tai->caps.do_aux_work = marvell_tai_aux_work;
+	pr_err("%s : %d\n", __func__, __LINE__);
 
-	tai->ptp_clock = ptp_clock_register(&tai->caps, &phydev->mdio.dev);
+	tai->ptp_clock = phydev_ptp_clock_register(&tai->caps, phydev);
+	pr_err("%s : %d phydev %px\n", __func__, __LINE__, phydev);
 	if (IS_ERR(tai->ptp_clock)) {
 		kfree(tai);
 		return PTR_ERR(tai->ptp_clock);

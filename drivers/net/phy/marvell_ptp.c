@@ -584,24 +584,24 @@ static void marvell_ptp_port_disable(struct phy_device *phydev)
  * The presence of an interrupt has an effect on how quickly a
  * timestamp requiring received packet will be processed.
  */
-irqreturn_t marvell_ptp_irq(struct phy_device *phydev)
-{
-	struct marvell_ptp *ptp;
-	irqreturn_t ret = IRQ_NONE;
-
-	if (!phydev->mii_ts)
-		return ret;
-
-	ptp = mii_ts_to_ptp(phydev->mii_ts);
-	if (marvell_ptp_rx_ts(ptp))
-		ret = IRQ_HANDLED;
-
-	if (ptp->tx_skb && marvell_ptp_txtstamp_complete(ptp))
-		ret = IRQ_HANDLED;
-
-	return ret;
-}
-EXPORT_SYMBOL_GPL(marvell_ptp_irq);
+//irqreturn_t marvell_ptp_irq(struct phy_device *phydev)
+//{
+//	struct marvell_ptp *ptp;
+//	irqreturn_t ret = IRQ_NONE;
+//
+//	if (!phydev->mii_ts)
+//		return ret;
+//
+//	ptp = mii_ts_to_ptp(phydev->mii_ts);
+//	if (marvell_ptp_rx_ts(ptp))
+//		ret = IRQ_HANDLED;
+//
+//	if (ptp->tx_skb && marvell_ptp_txtstamp_complete(ptp))
+//		ret = IRQ_HANDLED;
+//
+//	return ret;
+//}
+//EXPORT_SYMBOL_GPL(marvell_ptp_irq);
 
 static void marvell_ptp_worker(struct work_struct *work)
 {

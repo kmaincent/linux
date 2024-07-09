@@ -532,6 +532,7 @@ struct ptp_clock *phydev_ptp_clock_register(struct ptp_clock_info *info,
 
 	ptp->phc_source = HWTSTAMP_SOURCE_PHYLIB;
 	ptp->phydev = phydev;
+	pr_err("%s : %d phydev %pK\n", __func__, __LINE__, phydev);
 
 	return ptp;
 }

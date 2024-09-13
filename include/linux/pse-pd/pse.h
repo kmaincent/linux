@@ -50,6 +50,8 @@ struct pse_control_config {
  *	is in charge of the memory allocation.
  * @c33_pw_limit_nb_ranges: number of supported power limit configuration
  *	ranges
+ * @c33_prio_max: max priority allowed for the c33_prio variable value
+ * @c33_prio: priority of the PSE
  */
 struct pse_control_status {
 	enum ethtool_podl_pse_admin_state podl_admin_state;
@@ -62,6 +64,8 @@ struct pse_control_status {
 	u32 c33_avail_pw_limit;
 	struct ethtool_c33_pse_pw_limit_range *c33_pw_limit_ranges;
 	u32 c33_pw_limit_nb_ranges;
+	u32 c33_prio_max;
+	u32 c33_prio;
 };
 
 /**
@@ -81,6 +85,7 @@ struct pse_control_status {
  *			  set_current_limit regulator callback.
  *			  Should not return an error in case of MAX_PI_CURRENT
  *			  current value set.
+ * @pi_set_prio: Configure the PSE PI priority
  */
 struct pse_controller_ops {
 	int (*ethtool_get_status)(struct pse_controller_dev *pcdev,
@@ -95,6 +100,8 @@ struct pse_controller_ops {
 				    int id);
 	int (*pi_set_current_limit)(struct pse_controller_dev *pcdev,
 				    int id, int max_uA);
+	int (*pi_set_prio)(struct pse_controller_dev *pcdev, int id,
+			   unsigned int prio);
 };
 
 struct module;
@@ -150,6 +157,7 @@ struct pse_pi {
  * @types: types of the PSE controller
  * @pi: table of PSE PIs described in this controller device
  * @no_of_pse_pi: flag set if the pse_pis devicetree node is not used
+ * @pis_prio_max: Maximum value allowed for the PSE PIs priority
  */
 struct pse_controller_dev {
 	const struct pse_controller_ops *ops;
@@ -163,6 +171,7 @@ struct pse_controller_dev {
 	enum ethtool_pse_types types;
 	struct pse_pi *pi;
 	bool no_of_pse_pi;
+	unsigned int pis_prio_max;
 };
 
 #if IS_ENABLED(CONFIG_PSE_CONTROLLER)
@@ -184,6 +193,9 @@ int pse_ethtool_set_config(struct pse_control *psec,
 int pse_ethtool_set_pw_limit(struct pse_control *psec,
 			     struct netlink_ext_ack *extack,
 			     const unsigned int pw_limit);
+int pse_ethtool_set_prio(struct pse_control *psec,
+			 struct netlink_ext_ack *extack,
+			 unsigned int prio);
 
 bool pse_has_podl(struct pse_control *psec);
 bool pse_has_c33(struct pse_control *psec);
@@ -216,6 +228,13 @@ static inline int pse_ethtool_set_config(struct pse_control *psec,
 static inline int pse_ethtool_set_pw_limit(struct pse_control *psec,
 					   struct netlink_ext_ack *extack,
 					   const unsigned int pw_limit)
+{
+	return -EOPNOTSUPP;
+}
+
+static inline int pse_ethtool_set_prio(struct pse_control *psec,
+				       struct netlink_ext_ack *extack,
+				       unsigned int prio)
 {
 	return -EOPNOTSUPP;
 }

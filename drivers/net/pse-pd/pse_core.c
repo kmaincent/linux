@@ -750,6 +750,7 @@ static int _pse_ethtool_get_status(struct pse_controller_dev *pcdev,
 		return -EOPNOTSUPP;
 	}
 
+	status->c33_prio_max = pcdev->pis_prio_max;
 	return ops->ethtool_get_status(pcdev, id, extack, status);
 }
 
@@ -897,6 +898,35 @@ int pse_ethtool_set_pw_limit(struct pse_control *psec,
 	return regulator_set_current_limit(psec->ps, 0, uA);
 }
 EXPORT_SYMBOL_GPL(pse_ethtool_set_pw_limit);
+
+int pse_ethtool_set_prio(struct pse_control *psec,
+			 struct netlink_ext_ack *extack,
+			 unsigned int prio)
+{
+	const struct pse_controller_ops *ops;
+	int ret;
+
+	ops = psec->pcdev->ops;
+	if (!ops->pi_set_prio) {
+		NL_SET_ERR_MSG(extack,
+			       "pse driver does not support port priority");
+		return -EOPNOTSUPP;
+	}
+
+	if (prio > psec->pcdev->pis_prio_max) {
+		NL_SET_ERR_MSG_FMT(extack,
+				   "priority %d exceed priority max %d",
+				   prio, psec->pcdev->pis_prio_max);
+		return -ERANGE;
+	}
+
+	mutex_lock(&psec->pcdev->lock);
+	ret = ops->pi_set_prio(psec->pcdev, psec->id, prio);
+	mutex_unlock(&psec->pcdev->lock);
+
+	return ret;
+}
+EXPORT_SYMBOL_GPL(pse_ethtool_set_prio);
 
 bool pse_has_podl(struct pse_control *psec)
 {

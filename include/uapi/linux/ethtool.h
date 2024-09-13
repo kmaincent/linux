@@ -1001,6 +1001,8 @@ enum ethtool_c33_pse_pw_d_status {
 enum ethtool_c33_pse_events {
 	ETHTOOL_C33_PSE_EVENT_OVER_CURRENT =	1 << 0,
 	ETHTOOL_C33_PSE_EVENT_OVER_TEMP =	1 << 1,
+	ETHTOOL_C33_PSE_EVENT_CONNECTED =	1 << 2,
+	ETHTOOL_C33_PSE_EVENT_DISCONNECTED =	1 << 3,
 };
 
 /**

@@ -228,6 +228,9 @@ static int pse_pi_is_enabled(struct regulator_dev *rdev)
 		return -EOPNOTSUPP;
 
 	id = rdev_get_id(rdev);
+	if (pcdev->port_prio_mode == PSE_PORT_PRIO_SW)
+		return pcdev->pi[id].admin_state_enabled;
+
 	mutex_lock(&pcdev->lock);
 	ret = ops->pi_is_enabled(pcdev, id);
 	mutex_unlock(&pcdev->lock);
@@ -246,6 +249,15 @@ static int pse_pi_enable(struct regulator_dev *rdev)
 		return -EOPNOTSUPP;
 
 	id = rdev_get_id(rdev);
+	if (pcdev->port_prio_mode == PSE_PORT_PRIO_SW) {
+		/* Manage enabled status by software
+		 * Real enable process will happen after a port connected
+		 * event
+		 */
+		pcdev->pi[id].admin_state_enabled = 1;
+		return 0;
+	}
+
 	mutex_lock(&pcdev->lock);
 	ret = ops->pi_enable(pcdev, id);
 	if (!ret)
@@ -266,6 +278,15 @@ static int pse_pi_disable(struct regulator_dev *rdev)
 		return -EOPNOTSUPP;
 
 	id = rdev_get_id(rdev);
+	if (pcdev->port_prio_mode == PSE_PORT_PRIO_SW) {
+		/* Manage enabled status by software
+		 * Real enable process will happen after a port connected
+		 * event
+		 */
+		pcdev->pi[id].admin_state_enabled = 0;
+		return 0;
+	}
+
 	mutex_lock(&pcdev->lock);
 	ret = ops->pi_disable(pcdev, id);
 	if (!ret)
@@ -559,6 +580,8 @@ int pse_controller_register(struct pse_controller_dev *pcdev)
 
 	mutex_init(&pcdev->lock);
 	INIT_LIST_HEAD(&pcdev->pse_control_head);
+	if (pcdev->port_prio_supp_modes)
+		INIT_WORK(pcdev->work, pse_work_handler);
 	ret = ida_alloc_max(&pse_ida, INT_MAX, GFP_KERNEL);
 	if (ret < 0)
 		return ret;
@@ -707,6 +730,73 @@ pse_control_find_phy_by_id(struct pse_controller_dev *pcdev, int id)
 	return NULL;
 }
 
+static int pse_pi_enable_isr(struct regulator_dev *rdev)
+{
+	struct pse_controller_dev *pcdev = rdev_get_drvdata(rdev);
+	const struct pse_controller_ops *ops;
+	int id, ret;
+
+	ops = pcdev->ops;
+	if (!ops->pi_enable)
+		return -EOPNOTSUPP;
+
+	id = rdev_get_id(rdev);
+	if (pcdev->port_prio_mode == PSE_PORT_PRIO_SW) {
+		/* Manage enabled status by software
+		 * Real enable process will happen after a port connected
+		 * event
+		 */
+		pcdev->pi[id].admin_state_enabled = 1;
+		return 0;
+	}
+
+	mutex_lock(&pcdev->lock);
+	ret = ops->pi_enable(pcdev, id);
+	if (!ret)
+		pcdev->pi[id].admin_state_enabled = 1;
+	mutex_unlock(&pcdev->lock);
+
+	return ret;
+}
+
+static int pse_pi_disable_isr(struct regulator_dev *rdev)
+{
+	struct pse_controller_dev *pcdev = rdev_get_drvdata(rdev);
+	const struct pse_controller_ops *ops;
+	int id, ret;
+
+	ops = pcdev->ops;
+	if (!ops->pi_disable)
+		return -EOPNOTSUPP;
+
+	id = rdev_get_id(rdev);
+	if (pcdev->port_prio_mode == PSE_PORT_PRIO_SW) {
+		/* Manage enabled status by software
+		 * Real enable process will happen after a port connected
+		 * event
+		 */
+		pcdev->pi[id].admin_state_enabled = 0;
+		return 0;
+	}
+
+	mutex_lock(&pcdev->lock);
+	ret = ops->pi_disable(pcdev, id);
+	if (!ret)
+		pcdev->pi[id].admin_state_enabled = 0;
+	mutex_unlock(&pcdev->lock);
+
+	return ret;
+}
+
+static void pse_work_handler(struct work_struct *work)
+{
+	struct pse_controller_dev *pcdev;
+
+	pcdev = container_of(work, struct pse_controller_dev, work);
+	if (pcdev->work_data.func)
+		pcdev->work_data.func(pcdev, pcdev->work_data.id);
+}
+
 static irqreturn_t pse_notifier_isr(int irq, void *data)
 {
 	struct netlink_ext_ack extack = {};
@@ -721,7 +811,9 @@ static irqreturn_t pse_notifier_isr(int irq, void *data)
 
 	/* Clear notifs mask */
 	memset(h->notifs, 0, pcdev->nr_lines * sizeof(*h->notifs));
-	ret = desc->map_event(irq, h->pcdev, h->notifs, &notifs_mask, &extack);
+	mutex_lock(&pcdev->lock);
+	ret = desc->map_event(irq, pcdev, h->notifs, &notifs_mask, &extack);
+	mutex_unlock(&pcdev->lock);
 	if (ret || !notifs_mask)
 		return IRQ_NONE;
 
@@ -996,6 +1088,7 @@ static int _pse_ethtool_get_status(struct pse_controller_dev *pcdev,
 		return -EOPNOTSUPP;
 	}
 
+	status->c33_prio_max = pcdev->nr_lines;
 	return ops->ethtool_get_status(pcdev, id, extack, status);
 }
 
@@ -1021,10 +1114,31 @@ int pse_ethtool_get_status(struct pse_control *psec,
 }
 EXPORT_SYMBOL_GPL(pse_ethtool_get_status);
 
+static int pse_c33_set_sw_port_control(psec, config)
+{
+	int err;
+
+	switch (config->c33_admin_control) {
+	case ETHTOOL_C33_PSE_ADMIN_STATE_ENABLED:
+		psec->admin_state_enabled = 1;
+		break;
+	case ETHTOOL_C33_PSE_ADMIN_STATE_DISABLED:
+		psec->admin_state_enabled = 0;
+		break;
+	default:
+		err = -EOPNOTSUPP;
+	}
+
+	return err;
+}
+
 static int pse_ethtool_c33_set_config(struct pse_control *psec,
 				      const struct pse_control_config *config)
 {
 	int err = 0;
+
+	if (psec->pcdev->port_prio_mode == PSE_PORT_PRIO_SW)
+		return pse_c33_set_sw_port_control(psec, config);
 
 	/* Look at admin_state_enabled status to not call regulator_enable
 	 * or regulator_disable twice creating a regulator counter mismatch
@@ -1143,6 +1257,30 @@ int pse_ethtool_set_pw_limit(struct pse_control *psec,
 	return regulator_set_current_limit(psec->ps, 0, uA);
 }
 EXPORT_SYMBOL_GPL(pse_ethtool_set_pw_limit);
+
+int pse_ethtool_set_prio(struct pse_control *psec,
+			 struct netlink_ext_ack *extack,
+			 unsigned int prio)
+{
+	int ret;
+
+	if (prio > pcdev->nr_lines) {
+		NL_SET_ERR_MSG_FMT(extack,
+				   "priority %d exceed priority max %d",
+				   prio, pcdev->nr_lines);
+		return -ERANGE;
+	}
+
+	mutex_lock(&psec->pcdev->lock);
+	/* We don't want priority change in the middle of an
+	 * enable/disable call
+	 */
+	psec->pcdev->pi[psec->id].prio = prio;
+	mutex_unlock(&psec->pcdev->lock);
+
+	return ret;
+}
+EXPORT_SYMBOL_GPL(pse_ethtool_set_prio);
 
 bool pse_has_podl(struct pse_control *psec)
 {

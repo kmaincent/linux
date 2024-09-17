@@ -463,9 +463,14 @@ int pse_controller_register(struct pse_controller_dev *pcdev)
 	for (i = 0; i < pcdev->nr_lines; i++) {
 		char *reg_name;
 
-		/* Do not register regulator for PIs not described */
-		if (!pcdev->no_of_pse_pi && !pcdev->pi[i].np)
-			continue;
+		/* Disable PIs not described */
+		if (!pcdev->no_of_pse_pi && !pcdev->pi[i].np &&
+		    pcdev->ops->pi_disable) {
+
+			mutex_lock(&pcdev->lock);
+			pcdev->ops->pi_disable(pcdev, i);
+			mutex_unlock(&pcdev->lock);
+		}
 
 		reg_name = devm_kzalloc(pcdev->dev, reg_name_len, GFP_KERNEL);
 		if (!reg_name)

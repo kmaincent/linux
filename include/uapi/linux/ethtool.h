@@ -998,6 +998,11 @@ enum ethtool_c33_pse_pw_d_status {
 	ETHTOOL_C33_PSE_PW_D_STATUS_OTHERFAULT,
 };
 
+enum ethtool_c33_pse_events {
+	ETHTOOL_C33_PSE_EVENT_OVER_CURRENT =	1 << 0,
+	ETHTOOL_C33_PSE_EVENT_OVER_TEMP =	1 << 1,
+};
+
 /**
  * enum ethtool_podl_pse_admin_state - operational state of the PoDL PSE
  *	functions. IEEE 802.3-2018 30.15.1.1.2 aPoDLPSEAdminState

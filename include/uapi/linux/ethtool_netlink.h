@@ -114,6 +114,7 @@ enum {
 	ETHTOOL_MSG_MODULE_FW_FLASH_NTF,
 	ETHTOOL_MSG_PHY_GET_REPLY,
 	ETHTOOL_MSG_PHY_NTF,
+	ETHTOOL_MSG_PSE_NTF,
 
 	/* add new constants above here */
 	__ETHTOOL_MSG_KERNEL_CNT,
@@ -974,6 +975,16 @@ enum {
 	/* add new constants above here */
 	__ETHTOOL_A_PSE_CNT,
 	ETHTOOL_A_PSE_MAX = (__ETHTOOL_A_PSE_CNT - 1)
+};
+
+/* PSE NOTIFY */
+enum {
+	ETHTOOL_A_PSE_NTF_UNSPEC,
+	ETHTOOL_A_PSE_NTF_HEADER,	/* nest - ETHTOOL_A_HEADER_* */
+	ETHTOOL_A_C33_PSE_NTF_EVENTS,	/* u32 */
+
+	__ETHTOOL_A_PSE_NTF_CNT,
+	ETHTOOL_A_PSE_NTF_MAX = (__ETHTOOL_A_PSE_NTF_CNT - 1)
 };
 
 enum {

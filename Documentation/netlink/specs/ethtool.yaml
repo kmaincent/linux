@@ -1020,6 +1020,14 @@ attribute-sets:
         type: nest
         multi-attr: true
         nested-attributes: c33-pse-pw-limit
+      -
+        name: c33-pse-prio-max
+        type: u32
+        name-prefix: ethtool-a-
+      -
+        name: c33-pse-prio
+        type: u32
+        name-prefix: ethtool-a-
   -
     name: rss
     attributes:
@@ -1776,6 +1784,8 @@ operations:
             - c33-pse-ext-substate
             - c33-pse-avail-pw-limit
             - c33-pse-pw-limit-ranges
+            - c33-pse-prio-max
+            - c33-pse-prio
       dump: *pse-get-op
     -
       name: pse-set
@@ -1790,6 +1800,7 @@ operations:
             - podl-pse-admin-control
             - c33-pse-admin-control
             - c33-pse-avail-pw-limit
+            - c33-pse-prio
     -
       name: rss-get
       doc: Get RSS params.

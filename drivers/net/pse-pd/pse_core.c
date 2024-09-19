@@ -8,7 +8,6 @@
 #include <linux/device.h>
 #include <linux/of.h>
 #include <linux/pse-pd/pse.h>
-#include <linux/regulator/driver.h>
 #include <linux/regulator/machine.h>
 
 static DEFINE_MUTEX(pse_list_mutex);
@@ -544,6 +543,38 @@ int devm_pse_controller_register(struct device *dev,
 	return 0;
 }
 EXPORT_SYMBOL_GPL(devm_pse_controller_register);
+
+int devm_pse_irq_helper(struct pse_controller_dev *pcdev, int irq,
+			int irq_flags, int supported_errs,
+			const struct pse_irq_desc *d)
+{
+	struct regulator_dev **rdevs;
+	void *irq_helper;
+	int i;
+
+	rdevs = devm_kcalloc(pcdev->dev, pcdev->nr_lines,
+			     sizeof(struct regulator_dev *), GFP_KERNEL);
+	if (!rdevs)
+		return -ENOMEM;
+
+	for (i = 0; i < pcdev->nr_lines; i++)
+		rdevs[i] = pcdev->pi[i].rdev;
+
+	/* Register notifiers - can fail if IRQ is not given */
+	irq_helper = devm_regulator_irq_helper(pcdev->dev, d, irq,
+					       irq_flags, supported_errs,
+					       NULL, &rdevs[0],
+					       pcdev->nr_lines);
+	if (IS_ERR(irq_helper)) {
+		if (PTR_ERR(irq_helper) == -EPROBE_DEFER)
+			return -EPROBE_DEFER;
+
+		dev_warn(pcdev->dev, "IRQ disabled %pe\n", irq_helper);
+	}
+
+	return 0;
+}
+EXPORT_SYMBOL_GPL(devm_pse_irq_helper);
 
 /* PSE control section */
 

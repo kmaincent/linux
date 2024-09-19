@@ -8,12 +8,33 @@
 #include <linux/ethtool.h>
 #include <linux/list.h>
 #include <uapi/linux/ethtool.h>
+#include <linux/regulator/driver.h>
 
 /* Maximum current in uA according to IEEE 802.3-2022 Table 145-1 */
 #define MAX_PI_CURRENT 1920000
 
 struct phy_device;
 struct pse_controller_dev;
+
+/* structure and define wrappers from PSE to regulator */
+#define pse_irq_desc regulator_irq_desc
+#define pse_irq_data regulator_irq_data
+#define pse_err_data regulator_err_data
+#define pse_err_state regulator_err_state
+
+#define PSE_EVENT_TABLE(event)	REGULATOR_EVENT_##event
+#define PSE_ERROR_TABLE(error)	REGULATOR_ERROR_##error
+
+#define PSE_EVENT_OVER_CURRENT		PSE_EVENT_TABLE(OVER_CURRENT)
+#define PSE_EVENT_OVER_TEMP		PSE_EVENT_TABLE(OVER_TEMP)
+
+#define PSE_ERROR_OVER_CURRENT		PSE_ERROR_TABLE(OVER_CURRENT)
+#define PSE_ERROR_OVER_TEMP		PSE_ERROR_TABLE(OVER_TEMP)
+
+/* Return values for PSE IRQ helpers */
+#define PSE_ERROR_CLEARED	PSE_ERROR_TABLE(CLEARED)
+#define PSE_FAILED_RETRY	REGULATOR_FAILED_RETRY
+#define PSE_ERROR_ON		PSE_ERROR_TABLE(ON)
 
 /**
  * struct pse_control_config - PSE control/channel configuration.
@@ -180,6 +201,9 @@ void pse_controller_unregister(struct pse_controller_dev *pcdev);
 struct device;
 int devm_pse_controller_register(struct device *dev,
 				 struct pse_controller_dev *pcdev);
+int devm_pse_irq_helper(struct pse_controller_dev *pcdev, int irq,
+			int irq_flags, int supported_errs,
+			const struct pse_irq_desc *d);
 
 struct pse_control *of_pse_control_get(struct device_node *node);
 void pse_control_put(struct pse_control *psec);

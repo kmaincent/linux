@@ -28,6 +28,8 @@
 #define PD692X0_FW_MIN_VER	5
 #define PD692X0_FW_PATCH_VER	5
 
+#define PD692X0_USER_BYTE	42
+
 enum pd692x0_fw_state {
 	PD692X0_FW_UNKNOWN,
 	PD692X0_FW_OK,
@@ -76,6 +78,9 @@ enum {
 	PD692X0_MSG_GET_PORT_CLASS,
 	PD692X0_MSG_GET_PORT_MEAS,
 	PD692X0_MSG_GET_PORT_PARAM,
+	PD692X0_MSG_SET_USER_BYTE,
+	PD692X0_MSG_SAVE_SYS_SETTINGS,
+	PD692X0_MSG_RESTORE_FACTORY,
 
 	/* add new message above here */
 	PD692X0_MSG_CNT
@@ -95,6 +100,7 @@ struct pd692x0_priv {
 	unsigned long last_cmd_key_time;
 
 	enum ethtool_c33_pse_admin_state admin_state[PD692X0_MAX_PIS];
+	bool cfg_saved;
 };
 
 /* Template list of communication messages. The non-null bytes defined here
@@ -167,6 +173,24 @@ static const struct pd692x0_msg pd692x0_msg_template_list[PD692X0_MSG_CNT] = {
 	[PD692X0_MSG_GET_PORT_PARAM] = {
 		.key = PD692X0_KEY_REQ,
 		.sub = {0x05, 0xc0},
+		.data = {0x4e, 0x4e, 0x4e, 0x4e,
+			 0x4e, 0x4e, 0x4e, 0x4e},
+	},
+	[PD692X0_MSG_SET_USER_BYTE] = {
+		.key = PD692X0_KEY_PRG,
+		.sub = {0x41, PD692X0_USER_BYTE},
+		.data = {0x4e, 0x4e, 0x4e, 0x4e,
+			 0x4e, 0x4e, 0x4e, 0x4e},
+	},
+	[PD692X0_MSG_SAVE_SYS_SETTINGS] = {
+		.key = PD692X0_KEY_PRG,
+		.sub = {0x06, 0x0f},
+		.data = {0x4e, 0x4e, 0x4e, 0x4e,
+			 0x4e, 0x4e, 0x4e, 0x4e},
+	},
+	[PD692X0_MSG_RESTORE_FACTORY] = {
+		.key = PD692X0_KEY_PRG,
+		.sub = {0x2d, 0x4e},
 		.data = {0x4e, 0x4e, 0x4e, 0x4e,
 			 0x4e, 0x4e, 0x4e, 0x4e},
 	},
@@ -969,9 +993,11 @@ static int pd692x0_setup_pi_matrix(struct pse_controller_dev *pcdev)
 	if (ret)
 		goto out;
 
-	ret = pd692x0_write_ports_matrix(priv, port_matrix);
-	if (ret)
-		goto out;
+	if (!priv->cfg_saved) {
+		ret = pd692x0_write_ports_matrix(priv, port_matrix);
+		if (ret)
+			goto out;
+	}
 
 out:
 	for (i = 0; i < nmanagers; i++) {
@@ -1082,6 +1108,76 @@ static int pd692x0_pi_set_prio(struct pse_controller_dev *pcdev, int id,
 	return pd692x0_sendrecv_msg(priv, &msg, &buf);
 }
 
+static int pd692x0_save_conf(struct pse_controller_dev *pcdev)
+{
+	struct pd692x0_priv *priv = to_pd692x0_priv(pcdev);
+	struct pd692x0_msg msg, buf = {0};
+	int ret;
+
+	ret = pd692x0_fw_unavailable(priv);
+	if (ret)
+		return ret;
+
+	msg = pd692x0_msg_template_list[PD692X0_MSG_SET_USER_BYTE];
+	ret = pd692x0_sendrecv_msg(priv, &msg, &buf);
+	if (ret)
+		return ret;
+
+	msg = pd692x0_msg_template_list[PD692X0_MSG_SAVE_SYS_SETTINGS];
+	ret = pd692x0_send_msg(priv, &msg);
+	if (ret) {
+		dev_err(&priv->client->dev,
+			"Failed to reset the controller (%pe)\n", ERR_PTR(ret));
+		return ret;
+	}
+
+	msleep(50);
+
+	ret = i2c_master_recv(priv->client, (u8 *)&buf, sizeof(buf));
+	if (ret != sizeof(buf))
+		return ret < 0 ? ret : -EIO;
+
+	return 0;
+}
+
+static int pd692x0_reset_conf(struct pse_controller_dev *pcdev)
+{
+	struct pd692x0_priv *priv = to_pd692x0_priv(pcdev);
+	struct pd692x0_msg msg, buf = {0};
+	int ret;
+
+	ret = pd692x0_fw_unavailable(priv);
+	if (ret)
+		return ret;
+
+	if (!priv->cfg_saved)
+		return 0;
+
+	msg = pd692x0_msg_template_list[PD692X0_MSG_RESTORE_FACTORY];
+	ret = pd692x0_send_msg(priv, &msg);
+	if (ret) {
+		dev_err(&priv->client->dev,
+			"Failed to reset the controller (%pe)\n", ERR_PTR(ret));
+		return ret;
+	}
+
+	priv->cfg_saved = false;
+	msleep(100);
+
+	ret = i2c_master_recv(priv->client, (u8 *)&buf, sizeof(buf));
+	if (ret != sizeof(buf))
+		return ret < 0 ? ret : -EIO;
+
+	ret = pd692x0_setup_pi_matrix(&priv->pcdev);
+	if (ret < 0) {
+		dev_err(&priv->client->dev,
+			"Error configuring ports matrix (%pe)\n",
+			ERR_PTR(ret));
+	}
+
+	return ret;
+}
+
 static const struct pse_controller_ops pd692x0_ops = {
 	.setup_pi_matrix = pd692x0_setup_pi_matrix,
 	.ethtool_get_status = pd692x0_ethtool_get_status,
@@ -1092,6 +1188,8 @@ static const struct pse_controller_ops pd692x0_ops = {
 	.pi_get_current_limit = pd692x0_pi_get_current_limit,
 	.pi_set_current_limit = pd692x0_pi_set_current_limit,
 	.pi_set_prio = pd692x0_pi_set_prio,
+	.save_conf = pd692x0_save_conf,
+	.reset_conf = pd692x0_reset_conf,
 };
 
 #define PD692X0_FW_LINE_MAX_SZ 0xff
@@ -1239,6 +1337,7 @@ static enum fw_upload_err pd692x0_fw_prepare(struct fw_upload *fwl,
 	int ret;
 
 	priv->cancel_request = false;
+	priv->cfg_saved = false;
 	last_fw_state = priv->fw_state;
 
 	priv->fw_state = PD692X0_FW_PREPARE;
@@ -1501,6 +1600,9 @@ static int pd692x0_i2c_probe(struct i2c_client *client)
 			priv->fw_state = PD692X0_FW_OK;
 		}
 	}
+
+	if (buf.data[2] == PD692X0_USER_BYTE)
+		priv->cfg_saved = true;
 
 	priv->np = dev->of_node;
 	priv->pcdev.nr_lines = PD692X0_MAX_PIS;

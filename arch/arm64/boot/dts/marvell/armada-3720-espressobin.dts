@@ -17,4 +17,112 @@
 / {
 	model = "Globalscale Marvell ESPRESSOBin Board";
 	compatible = "globalscale,espressobin", "marvell,armada3720", "marvell,armada3700";
+
+	pse_reg: pse-reg@0 {
+		compatible = "regulator-fixed";
+		regulator-name = "pse-reg";
+		regulator-power-budget = <15000>;
+	};
+
+	pse_reg2: pse-reg@2 {
+		compatible = "regulator-fixed";
+		regulator-name = "pse-reg2";
+		regulator-power-budget = <18000>;
+	};
+};
+
+&i2c0 {
+	status = "okay";
+	pinctrl-names = "default";
+	pinctrl-0 = <&i2c1_pins>;
+
+	tps2388:ethernet-pse@20 {
+		compatible = "ti,tps23881";
+		reg = <0x20>;
+		interrupts = <10 IRQ_TYPE_EDGE_FALLING>;
+		interrupt-parent = <&gpionb>;
+		reset-gpios = <&gpionb 14 GPIO_ACTIVE_LOW>;
+		channels {
+			#address-cells = <1>;
+			#size-cells = <0>;
+
+			phys0: channel@0 {
+				reg = <0>;
+			};
+
+			phys1: channel@1 {
+				reg = <1>;
+			};
+
+			phys2: channel@2 {
+				reg = <2>;
+			};
+
+			phys3: channel@3 {
+				reg = <3>;
+			};
+
+			phys6: channel@6 {
+				reg = <6>;
+			};
+
+			phys7: channel@7 {
+				reg = <7>;
+			};
+		};
+
+		pse-pis {
+			#address-cells = <1>;
+			#size-cells = <0>;
+
+			pse_pi0: pse-pi@0 {
+				reg = <0>;
+				#pse-cells = <0>;
+				pairset-names = "alternative-a";
+				pairsets = <&phys2>;
+				polarity-supported = "MDI";
+				vpwr-supply = <&pse_reg>;
+			};
+
+			pse_pi2: pse-pi@2 {
+				reg = <2>;
+				#pse-cells = <0>;
+				pairset-names = "alternative-a";
+				pairsets = <&phys1>;
+				polarity-supported = "MDI";
+				vpwr-supply = <&pse_reg>;
+			};
+
+			pse_pi7: pse-pi@7 {
+				reg = <7>;
+				#pse-cells = <0>;
+				pairset-names = "alternative-a";
+				pairsets = <&phys3>;
+				polarity-supported = "MDI";
+				vpwr-supply = <&pse_reg>;
+			};
+
+			pse_pi1: pse-pi@1 {
+				reg = <1>;
+				#pse-cells = <0>;
+				pairset-names = "alternative-a", "alternative-b";
+				pairsets = <&phys6 &phys7>;
+				polarity-supported = "MDI", "S";
+				vpwr-supply = <&pse_reg2>;
+			};
+		};
+	};
+};
+
+
+&switch0phy0 {
+	pses = <&pse_pi7>;
+};
+
+&switch0phy1 {
+	pses = <&pse_pi0>;
+};
+
+&switch0phy2 {
+	pses = <&pse_pi2>;
 };

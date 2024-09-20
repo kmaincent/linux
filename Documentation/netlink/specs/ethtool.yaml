@@ -1028,6 +1028,14 @@ attribute-sets:
         name: c33-pse-prio
         type: u32
         name-prefix: ethtool-a-
+      -
+        name: c33-pse-save-conf
+        type: flag
+        name-prefix: ethtool-a-
+      -
+        name: c33-pse-reset-conf
+        type: flag
+        name-prefix: ethtool-a-
   -
     name: rss
     attributes:
@@ -1801,6 +1809,8 @@ operations:
             - c33-pse-admin-control
             - c33-pse-avail-pw-limit
             - c33-pse-prio
+            - c33-pse-save-conf
+            - c33-pse-reset-conf
     -
       name: rss-get
       doc: Get RSS params.

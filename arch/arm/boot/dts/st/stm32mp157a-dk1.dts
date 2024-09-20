@@ -23,3 +23,73 @@
 		stdout-path = "serial0:115200n8";
 	};
 };
+
+&i2c5 {
+	status = "okay";
+
+	tps2388:ethernet-pse@20 {
+		compatible = "ti,tps23881";
+		reg = <0x20>;
+		channels {
+			#address-cells = <1>;
+			#size-cells = <0>;
+
+			phys0: channel@0 {
+				reg = <0>;
+			};
+
+			phys1: channel@1 {
+				reg = <1>;
+			};
+
+			phys2: channel@2 {
+				reg = <2>;
+			};
+
+			phys3: channel@3 {
+				reg = <3>;
+			};
+
+			phys6: channel@6 {
+				reg = <6>;
+			};
+
+			phys7: channel@7 {
+				reg = <7>;
+			};
+		};
+
+		pse-pis {
+			#address-cells = <1>;
+			#size-cells = <0>;
+
+			pse_pi0: pse-pi@0 {
+				reg = <0>;
+				#pse-cells = <0>;
+				pairset-names = "alternative-a";
+				pairsets = <&phys0>;
+				polarity-supported = "MDI";
+			};
+
+			pse_pi7: pse-pi@7 {
+				reg = <7>;
+				#pse-cells = <0>;
+				pairset-names = "alternative-a";
+				pairsets = <&phys3>;
+				polarity-supported = "MDI";
+			};
+
+			pse_pi1: pse-pi@1 {
+				reg = <1>;
+				#pse-cells = <0>;
+				pairset-names = "alternative-a", "alternative-b";
+				pairsets = <&phys6 &phys7>;
+				polarity-supported = "MDI", "S";
+			};
+		};
+	};
+};
+
+&phy0 {
+	pses = <&pse_pi7>;
+};

@@ -1861,6 +1861,11 @@ Request contents:
                                                   power limit
   ``ETHTOOL_A_C33_PSE_PRIO``                 u32  Control priority of the
                                                   PoE PSE
+  ``ETHTOOL_A_C33_PSE_SAVE_CONF``           flag  Save PoE PSE configuration to
+                                                  permanent memory
+  ``ETHTOOL_A_C33_PSE_RESET_CONF``          flag  Reset PoE PSE permanent
+                                                  configuration to its default
+                                                  state
   ======================================  ======  =============================
 
 When set, the optional ``ETHTOOL_A_PODL_PSE_ADMIN_CONTROL`` attribute is used
@@ -1886,6 +1891,13 @@ conversion can be done in user space, for example by ethtool.
 When set, the optional ``ETHTOOL_A_C33_PSE_PRIO`` attributes is used to
 control the C33 PSE priority. Allowed priority value are between zero
 and the value of ``ETHTOOL_A_C33_PSE_PRIO_MAX`` attribute.
+
+When set, the optional ``ETHTOOL_A_C33_PSE_SAVE_CONF`` attributes is used to
+save PoE PSE configuration to permanent memory. This will keep the PSE
+configuration across reboot.
+
+When set, the optional ``ETHTOOL_A_C33_PSE_RESET_CONF`` attributes is used to
+reset the PoE PSE configuration in permanent memory.
 
 RSS_GET
 =======

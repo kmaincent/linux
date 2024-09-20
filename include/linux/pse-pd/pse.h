@@ -107,6 +107,8 @@ struct pse_control_status {
  *			  Should not return an error in case of MAX_PI_CURRENT
  *			  current value set.
  * @pi_set_prio: Configure the PSE PI priority
+ * @save_conf: Save the PSE configuration.
+ * @reset_conf: Reset the PSE configuration.
  */
 struct pse_controller_ops {
 	int (*ethtool_get_status)(struct pse_controller_dev *pcdev,

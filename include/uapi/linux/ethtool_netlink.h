@@ -972,6 +972,8 @@ enum {
 	ETHTOOL_A_C33_PSE_PW_LIMIT_RANGES,	/* nest - _C33_PSE_PW_LIMIT_* */
 	ETHTOOL_A_C33_PSE_PRIO_MAX,		/* u32 */
 	ETHTOOL_A_C33_PSE_PRIO,			/* u32 */
+	ETHTOOL_A_C33_PSE_SAVE_CONF,		/* flag */
+	ETHTOOL_A_C33_PSE_RESET_CONF,		/* flag */
 
 	/* add new constants above here */
 	__ETHTOOL_A_PSE_CNT,

@@ -228,6 +228,8 @@ const struct nla_policy ethnl_pse_set_policy[ETHTOOL_A_PSE_MAX + 1] = {
 				 ETHTOOL_C33_PSE_ADMIN_STATE_ENABLED),
 	[ETHTOOL_A_C33_PSE_AVAIL_PW_LIMIT] = { .type = NLA_U32 },
 	[ETHTOOL_A_C33_PSE_PRIO] = { .type = NLA_U32 },
+	[ETHTOOL_A_C33_PSE_SAVE_CONF] = { .type = NLA_FLAG },
+	[ETHTOOL_A_C33_PSE_RESET_CONF] = { .type = NLA_FLAG },
 };
 
 static int
@@ -276,6 +278,15 @@ ethnl_set_pse(struct ethnl_req_info *req_info, struct genl_info *info)
 	if (ret)
 		return ret;
 
+	if (tb[ETHTOOL_A_C33_PSE_RESET_CONF]) {
+		if (!!nla_get_u8(tb[ETHTOOL_A_C33_PSE_RESET_CONF])) {
+			ret = pse_ethtool_reset_conf(phydev->psec,
+						     info->extack);
+			if (ret)
+				return ret;
+		}
+	}
+
 	if (tb[ETHTOOL_A_C33_PSE_PRIO]) {
 		unsigned int prio;
 
@@ -312,6 +323,15 @@ ethnl_set_pse(struct ethnl_req_info *req_info, struct genl_info *info)
 					     &config);
 		if (ret)
 			return ret;
+	}
+
+	if (tb[ETHTOOL_A_C33_PSE_SAVE_CONF]) {
+		if (!!nla_get_u8(tb[ETHTOOL_A_C33_PSE_SAVE_CONF])) {
+			ret = pse_ethtool_save_conf(phydev->psec,
+						    info->extack);
+			if (ret)
+				return ret;
+		}
 	}
 
 	/* Return errno or zero - PSE has no notification */

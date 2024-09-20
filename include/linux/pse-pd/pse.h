@@ -123,6 +123,8 @@ struct pse_controller_ops {
 				    int id, int max_uA);
 	int (*pi_set_prio)(struct pse_controller_dev *pcdev, int id,
 			   unsigned int prio);
+	int (*save_conf)(struct pse_controller_dev *pcdev);
+	int (*reset_conf)(struct pse_controller_dev *pcdev);
 };
 
 struct module;
@@ -220,6 +222,10 @@ int pse_ethtool_set_pw_limit(struct pse_control *psec,
 int pse_ethtool_set_prio(struct pse_control *psec,
 			 struct netlink_ext_ack *extack,
 			 unsigned int prio);
+int pse_ethtool_save_conf(struct pse_control *psec,
+			  struct netlink_ext_ack *extack);
+int pse_ethtool_reset_conf(struct pse_control *psec,
+			   struct netlink_ext_ack *extack);
 
 bool pse_has_podl(struct pse_control *psec);
 bool pse_has_c33(struct pse_control *psec);
@@ -259,6 +265,18 @@ static inline int pse_ethtool_set_pw_limit(struct pse_control *psec,
 static inline int pse_ethtool_set_prio(struct pse_control *psec,
 				       struct netlink_ext_ack *extack,
 				       unsigned int prio)
+{
+	return -EOPNOTSUPP;
+}
+
+static inline int pse_ethtool_save_conf(struct pse_control *psec,
+					struct netlink_ext_ack *extack)
+{
+	return -EOPNOTSUPP;
+}
+
+static inline int pse_ethtool_reset_conf(struct pse_control *psec,
+					 struct netlink_ext_ack *extack)
 {
 	return -EOPNOTSUPP;
 }

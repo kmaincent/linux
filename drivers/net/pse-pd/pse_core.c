@@ -965,6 +965,48 @@ int pse_ethtool_set_prio(struct pse_control *psec,
 }
 EXPORT_SYMBOL_GPL(pse_ethtool_set_prio);
 
+int pse_ethtool_save_conf(struct pse_control *psec,
+			  struct netlink_ext_ack *extack)
+{
+	const struct pse_controller_ops *ops;
+	int ret;
+
+	ops = psec->pcdev->ops;
+	if (!ops->save_conf) {
+		NL_SET_ERR_MSG(extack,
+			       "pse driver does not support permanent configuration");
+		return -EOPNOTSUPP;
+	}
+
+	mutex_lock(&psec->pcdev->lock);
+	ret = ops->save_conf(psec->pcdev);
+	mutex_unlock(&psec->pcdev->lock);
+
+	return ret;
+}
+EXPORT_SYMBOL_GPL(pse_ethtool_save_conf);
+
+int pse_ethtool_reset_conf(struct pse_control *psec,
+			   struct netlink_ext_ack *extack)
+{
+	const struct pse_controller_ops *ops;
+	int ret;
+
+	ops = psec->pcdev->ops;
+	if (!ops->reset_conf) {
+		NL_SET_ERR_MSG(extack,
+			       "pse driver does not support permanent configuration");
+		return -EOPNOTSUPP;
+	}
+
+	mutex_lock(&psec->pcdev->lock);
+	ret = ops->reset_conf(psec->pcdev);
+	mutex_unlock(&psec->pcdev->lock);
+
+	return ret;
+}
+EXPORT_SYMBOL_GPL(pse_ethtool_reset_conf);
+
 bool pse_has_podl(struct pse_control *psec)
 {
 	return psec->pcdev->types & ETHTOOL_PSE_PODL;

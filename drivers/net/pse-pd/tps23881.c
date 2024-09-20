@@ -17,6 +17,13 @@
 
 #define TPS23881_MAX_CHANS 8
 
+#define TPS23881_REG_IT		0x0
+#define TPS23881_REG_IT_MASK	0x1
+#define TPS23881_REG_IT_IFAULT	BIT(5)
+#define TPS23881_REG_IT_SUPF	BIT(7)
+#define TPS23881_REG_FAULT	0x7
+#define TPS23881_REG_SUPF_EVENT	0xb
+#define TPS23881_REG_TSD	BIT(7)
 #define TPS23881_REG_PW_STATUS	0x10
 #define TPS23881_REG_OP_MODE	0x12
 #define TPS23881_OP_MODE_SEMIAUTO	0xaaaa
@@ -25,6 +32,7 @@
 #define TPS23881_REG_PW_PRIO	0x15
 #define TPS23881_REG_GEN_MASK	0x17
 #define TPS23881_REG_NBITACC	BIT(5)
+#define TPS23881_REG_INTEN	BIT(7)
 #define TPS23881_REG_PW_EN	0x19
 #define TPS23881_REG_2PAIR_POL1	0x1e
 #define TPS23881_REG_PORT_MAP	0x26
@@ -59,6 +67,7 @@ struct tps23881_priv {
 	struct pse_controller_dev pcdev;
 	struct device_node *np;
 	struct tps23881_port_desc port[TPS23881_MAX_CHANS];
+	struct gpio_desc *oss;
 };
 
 static struct tps23881_priv *to_tps23881_priv(struct pse_controller_dev *pcdev)
@@ -1088,11 +1097,112 @@ static int tps23881_flash_sram_fw(struct i2c_client *client)
 	return 0;
 }
 
+static void tps23881_turn_off_low_prio(struct tps23881_priv *priv)
+{
+	dev_info(&priv->client->dev,
+		 "turn off low priority ports due to over current event.\n");
+	gpiod_set_value_cansleep(priv->oss, 1);
+
+	/* TPS23880 datasheet (Rev G) indicates minimum OSS pulse is 5us */
+	usleep_range(5, 10);
+	gpiod_set_value_cansleep(priv->oss, 0);
+}
+
+static int tps23881_irq_handler(int irq, struct pse_irq_data *pid,
+				unsigned long *dev_mask)
+{
+	struct tps23881_priv *priv = (struct tps23881_priv *)pid->data;
+	struct i2c_client *client = priv->client;
+	struct pse_err_state *stat;
+	int ret, i;
+	u16 val;
+
+	*dev_mask = 0;
+	for (i = 0; i < TPS23881_MAX_CHANS; i++) {
+		stat = &pid->states[i];
+		stat->notifs = 0;
+		stat->errors = 0;
+	}
+
+	ret = i2c_smbus_read_word_data(client, TPS23881_REG_IT);
+	if (ret < 0)
+		return PSE_FAILED_RETRY;
+
+	val = (u16)ret;
+	if (val & TPS23881_REG_IT_SUPF) {
+		ret = i2c_smbus_read_word_data(client, TPS23881_REG_SUPF_EVENT);
+		if (ret < 0)
+			return PSE_FAILED_RETRY;
+
+		if (ret & TPS23881_REG_TSD) {
+			for (i = 0; i < TPS23881_MAX_CHANS; i++) {
+				stat = &pid->states[i];
+				*dev_mask |= 1 << i;
+				stat->notifs = PSE_EVENT_OVER_TEMP;
+				stat->errors = PSE_ERROR_OVER_TEMP;
+			}
+		}
+	}
+
+	if (val & (TPS23881_REG_IT_IFAULT | TPS23881_REG_IT_IFAULT << 8)) {
+		ret = i2c_smbus_read_word_data(client, TPS23881_REG_FAULT);
+		if (ret < 0)
+			return PSE_FAILED_RETRY;
+
+		val = (u16)(ret & 0xf0f);
+
+		/* Power cut detected, shutdown low priority port */
+		if (val && priv->oss)
+			tps23881_turn_off_low_prio(priv);
+
+		*dev_mask |= val;
+		for (i = 0; i < TPS23881_MAX_CHANS; i++) {
+			if (val & BIT(i)) {
+				stat = &pid->states[i];
+				stat->notifs = PSE_EVENT_OVER_CURRENT;
+				stat->errors = PSE_ERROR_OVER_CURRENT;
+			}
+		}
+	}
+
+	return PSE_ERROR_CLEARED;
+}
+
+static int tps23881_setup_irq(struct tps23881_priv *priv, int irq)
+{
+	int errs = PSE_ERROR_OVER_CURRENT | PSE_ERROR_OVER_TEMP;
+	struct i2c_client *client = priv->client;
+	struct pse_irq_desc irq_desc = {
+		.name = "tps23881-irq",
+		.map_event = tps23881_irq_handler,
+		.data = priv,
+	};
+	int ret;
+	u16 val;
+
+	val = TPS23881_REG_IT_IFAULT | TPS23881_REG_IT_SUPF |
+	      TPS23881_REG_IT_IFAULT << 8 | TPS23881_REG_IT_SUPF << 8;
+	ret = i2c_smbus_write_word_data(client, TPS23881_REG_IT_MASK, val);
+	if (ret)
+		return ret;
+
+	ret = i2c_smbus_read_word_data(client, TPS23881_REG_GEN_MASK);
+	if (ret < 0)
+		return ret;
+
+	val = (u16)(ret | TPS23881_REG_INTEN | TPS23881_REG_INTEN << 8);
+	ret = i2c_smbus_write_word_data(client, TPS23881_REG_GEN_MASK, val);
+	if (ret < 0)
+		return ret;
+
+	return devm_pse_irq_helper(&priv->pcdev, irq, 0, errs, &irq_desc);
+}
+
 static int tps23881_i2c_probe(struct i2c_client *client)
 {
 	struct device *dev = &client->dev;
 	struct tps23881_priv *priv;
-	struct gpio_desc *reset;
+	struct gpio_desc *reset, *oss;
 	int ret;
 	u8 val;
 
@@ -1167,6 +1277,17 @@ static int tps23881_i2c_probe(struct i2c_client *client)
 	if (ret) {
 		return dev_err_probe(dev, ret,
 				     "failed to register PSE controller\n");
+	}
+
+	oss = devm_gpiod_get_optional(dev, "oss", GPIOD_OUT_LOW);
+	if (IS_ERR(oss))
+		return dev_err_probe(&client->dev, PTR_ERR(oss), "Failed to get OSS GPIO\n");
+	priv->oss = oss;
+
+	if (client->irq) {
+		ret = tps23881_setup_irq(priv, client->irq);
+		if (ret)
+			return ret;
 	}
 
 	return ret;

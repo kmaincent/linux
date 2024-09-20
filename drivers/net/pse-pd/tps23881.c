@@ -22,6 +22,7 @@
 #define TPS23881_OP_MODE_SEMIAUTO	0xaaaa
 #define TPS23881_REG_DIS_EN	0x13
 #define TPS23881_REG_DET_CLA_EN	0x14
+#define TPS23881_REG_PW_PRIO	0x15
 #define TPS23881_REG_GEN_MASK	0x17
 #define TPS23881_REG_NBITACC	BIT(5)
 #define TPS23881_REG_PW_EN	0x19
@@ -407,6 +408,24 @@ static int tps23881_ethtool_get_status(struct pse_controller_dev *pcdev,
 	if (ret < 0)
 		return ret;
 	status->c33_pw_class = ret;
+
+	ret = i2c_smbus_read_word_data(client, TPS23881_REG_PW_PRIO);
+	if (ret < 0)
+		return ret;
+
+	chan = priv->port[id].chan[0];
+	if (chan < 4)
+		status->c33_prio = !!(ret & BIT(chan + 4));
+	else
+		status->c33_prio = !!(ret & BIT(chan + 8));
+
+	if (priv->port[id].is_4p) {
+		chan = priv->port[id].chan[1];
+		if (chan < 4)
+			status->c33_prio &= !!(ret & BIT(chan + 4));
+		else
+			status->c33_prio &= !!(ret & BIT(chan + 8));
+	}
 
 	return 0;
 }
@@ -925,6 +944,42 @@ static int tps23881_pi_set_current_limit(struct pse_controller_dev *pcdev,
 	return 0;
 }
 
+static int tps23881_pi_set_prio(struct pse_controller_dev *pcdev, int id,
+				unsigned int prio)
+{
+	struct tps23881_priv *priv = to_tps23881_priv(pcdev);
+	struct i2c_client *client = priv->client;
+	u8 chan, bit;
+	u16 val;
+	int ret;
+
+	ret = i2c_smbus_read_word_data(client, TPS23881_REG_PW_PRIO);
+	if (ret < 0)
+		return ret;
+
+	chan = priv->port[id].chan[0];
+	if (chan < 4)
+		bit = chan + 4;
+	else
+		bit = chan + 8;
+
+	val = (u16)(ret & ~BIT(bit));
+	val |= prio << (bit);
+
+	if (priv->port[id].is_4p) {
+		chan = priv->port[id].chan[1];
+		if (chan < 4)
+			bit = chan + 4;
+		else
+			bit = chan + 8;
+
+		val &= ~BIT(bit);
+		val |= prio << (bit);
+	}
+
+	return i2c_smbus_write_word_data(client, TPS23881_REG_PW_PRIO, val);
+}
+
 static const struct pse_controller_ops tps23881_ops = {
 	.setup_pi_matrix = tps23881_setup_pi_matrix,
 	.pi_enable = tps23881_pi_enable,
@@ -934,6 +989,7 @@ static const struct pse_controller_ops tps23881_ops = {
 	.pi_get_voltage = tps23881_pi_get_voltage,
 	.pi_get_current_limit = tps23881_pi_get_current_limit,
 	.pi_set_current_limit = tps23881_pi_set_current_limit,
+	.pi_set_prio = tps23881_pi_set_prio,
 };
 
 static const char fw_parity_name[] = "ti/tps23881/tps23881-parity-14.bin";
@@ -1106,6 +1162,7 @@ static int tps23881_i2c_probe(struct i2c_client *client)
 	priv->pcdev.dev = dev;
 	priv->pcdev.types = ETHTOOL_PSE_C33;
 	priv->pcdev.nr_lines = TPS23881_MAX_CHANS;
+	priv->pcdev.pis_prio_max = 1;
 	ret = devm_pse_controller_register(dev, &priv->pcdev);
 	if (ret) {
 		return dev_err_probe(dev, ret,

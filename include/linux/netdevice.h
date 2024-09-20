@@ -2424,6 +2424,7 @@ struct net_device {
 
 	/** @irq_moder: dim parameters used if IS_ENABLED(CONFIG_DIMLIB). */
 	struct dim_irq_moder	*irq_moder;
+	struct pse_control	*psec;
 
 	u64			max_pacing_offload_horizon;
 	struct napi_config	*napi_config;

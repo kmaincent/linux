@@ -20,6 +20,7 @@
 
 	aliases {
 		ethernet0 = &ethernet1;
+		ethernet1 = &ethernet2;
 		serial0 = &uart4;
 		serial1 = &usart1;
 		serial2 = &uart8;
@@ -134,6 +135,12 @@
 		compatible = "mmc-pwrseq-simple";
 		reset-gpios = <&mcp23017 11 GPIO_ACTIVE_LOW>;
 	};
+
+	pse_supply: pse-supply@0 {
+		compatible = "regulator-fixed";
+		regulator-name = "pse-supply";
+		regulator-power-budget = <10000>;
+	};
 };
 
 &adc_1 {
@@ -204,6 +211,31 @@
 			reg = <0>;
 			reset-gpios = <&mcp23017 9 GPIO_ACTIVE_LOW>;
 			wakeup-source;
+		};
+	};
+};
+
+&ethernet2 {
+	status = "okay";
+	pinctrl-0 = <&eth2_rmii_pins_a>;
+	pinctrl-1 = <&eth2_rmii_sleep_pins_a>;
+	pinctrl-names = "default", "sleep";
+	phy-mode = "rmii";
+	max-speed = <100>;
+	phy-handle = <&phy0_eth2>;
+	st,ext-phyclk;
+	phy-supply = <&scmi_v3v3_sw>;
+	nvmem-cells = <&ethernet_mac2_address>;
+	nvmem-cell-names = "mac-address";
+
+	mdio1 {
+		#address-cells = <1>;
+		#size-cells = <0>;
+		compatible = "snps,dwmac-mdio";
+		phy0_eth2: ethernet-phy@0 {
+			compatible = "ethernet-phy-id0007.c131";
+			reset-gpios = <&mcp23017 10 GPIO_ACTIVE_LOW>;
+			reg = <0>;
 		};
 	};
 };
@@ -338,6 +370,79 @@
 		touchscreen-size-y = <272>;
 		status = "okay" ;
 	};
+
+	tps2388:ethernet-pse@20 {
+		compatible = "ti,tps23881";
+		reg = <0x20>;
+		channels {
+			#address-cells = <1>;
+			#size-cells = <0>;
+
+			phys0: channel@0 {
+				reg = <0>;
+			};
+
+			phys1: channel@1 {
+				reg = <1>;
+			};
+
+			phys2: channel@2 {
+				reg = <2>;
+			};
+
+			phys3: channel@3 {
+				reg = <3>;
+			};
+
+			phys6: channel@6 {
+				reg = <6>;
+			};
+
+			phys7: channel@7 {
+				reg = <7>;
+			};
+		};
+
+		pse-pis {
+			#address-cells = <1>;
+			#size-cells = <0>;
+
+			pse_pi0: pse-pi@0 {
+				reg = <0>;
+				#pse-cells = <0>;
+				pairset-names = "alternative-a";
+				pairsets = <&phys2>;
+				polarity-supported = "MDI";
+				vpwr-supply = <&pse_supply>;
+			};
+
+			pse_pi7: pse-pi@7 {
+				reg = <7>;
+				#pse-cells = <0>;
+				pairset-names = "alternative-a";
+				pairsets = <&phys3>;
+				polarity-supported = "MDI";
+				vpwr-supply = <&pse_supply>;
+			};
+
+			pse_pi1: pse-pi@1 {
+				reg = <1>;
+				#pse-cells = <0>;
+				pairset-names = "alternative-a", "alternative-b";
+				pairsets = <&phys6 &phys7>;
+				polarity-supported = "MDI", "S";
+				vpwr-supply = <&pse_supply>;
+			};
+		};
+	};
+};
+
+&phy0_eth1 {
+	pses = <&pse_pi7>;
+};
+
+&phy0_eth2 {
+	pses = <&pse_pi0>;
 };
 
 &iwdg2 {

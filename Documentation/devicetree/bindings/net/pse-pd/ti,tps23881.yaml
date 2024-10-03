@@ -26,6 +26,12 @@ properties:
   reset-gpios:
     maxItems: 1
 
+  oss-gpios:
+    maxItems: 1
+    desxription: GPIO line handling the turn-off procedure for the
+      low-priority ports. This GPIO will be triggered in the event of an
+      over-current condition.
+
   channels:
     description: each set of 8 ports can be assigned to one physical
       channels or two for PoE4. This parameter describes the configuration

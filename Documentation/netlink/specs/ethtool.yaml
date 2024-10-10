@@ -1132,6 +1132,18 @@ attribute-sets:
       -
         name: downstream-sfp-name
         type: string
+  -
+    name: pse-ntf
+    attributes:
+      -
+        name: header
+        type: nest
+        nested-attributes: header
+      -
+        name: c33-pse-ntf-events
+        type: nest
+        nested-attributes: bitset
+        name-prefix: ethtool-a-
 
 operations:
   enum-model: directional
@@ -1951,3 +1963,13 @@ operations:
             - upstream-sfp-name
             - downstream-sfp-name
       dump: *phy-get-op
+    -
+      name: pse-ntf
+      doc: Notification for pse events.
+
+      attribute-set: pse-ntf
+
+      event:
+        attributes:
+          - header
+          - c33-pse-ntf-events

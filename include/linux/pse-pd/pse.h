@@ -116,6 +116,7 @@ struct pse_pw_limit_ranges {
 /**
  * struct ethtool_pse_control_status - PSE control/channel status.
  *
+ * @pse_id: PSE index.
  * @pw_d_id: PSE power domain index.
  * @podl_admin_state: operational state of the PoDL PSE
  *	functions. IEEE 802.3-2018 30.15.1.1.2 aPoDLPSEAdminState
@@ -141,6 +142,7 @@ struct pse_pw_limit_ranges {
  *	evaluation strategy.
  */
 struct ethtool_pse_control_status {
+	u32 pse_id;
 	u32 pw_d_id;
 	enum ethtool_podl_pse_admin_state podl_admin_state;
 	enum ethtool_podl_pse_pw_d_status podl_pw_status;
@@ -280,6 +282,7 @@ struct pse_ntf {
 /**
  * struct pse_controller_dev - PSE controller entity that might
  *                             provide multiple PSE controls
+ * @id: Index of the PSE
  * @ops: a pointer to device specific struct pse_controller_ops
  * @owner: kernel module of the PSE controller driver
  * @list: internal list of PSE controller devices
@@ -300,6 +303,7 @@ struct pse_ntf {
  * @ntf_fifo_lock: protect @ntf_fifo writer
  */
 struct pse_controller_dev {
+	u32 id;
 	const struct pse_controller_ops *ops;
 	struct module *owner;
 	struct list_head list;

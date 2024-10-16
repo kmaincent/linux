@@ -15,6 +15,7 @@
 static DEFINE_MUTEX(pse_list_mutex);
 static LIST_HEAD(pse_controller_list);
 static DEFINE_IDA(pse_ida);
+static DEFINE_XARRAY_ALLOC(pse_pw_d_map);
 
 /**
  * struct pse_control - a PSE control
@@ -32,6 +33,12 @@ struct pse_control {
 	unsigned int id;
 	struct kref refcnt;
 	struct phy_device *attached_phydev;
+};
+
+struct pse_power_domain {
+	int id;
+	struct regulator *supply;
+	int pw_budget;
 };
 
 static int of_load_single_pse_pi_pairset(struct device_node *node,
@@ -430,6 +437,115 @@ devm_pse_pi_regulator_register(struct pse_controller_dev *pcdev,
 	return 0;
 }
 
+static void pse_flush_pw_ds(struct pse_controller_dev *pcdev)
+{
+	struct pse_power_domain *pw_d;
+	int i;
+
+	for (i = 0; i < pcdev->nr_lines; i++) {
+		pw_d = xa_load(&pse_pw_d_map, pcdev->pi[i].pw_d->id);
+		if (pw_d) {
+			regulator_put(pw_d->supply);
+			xa_erase(&pse_pw_d_map, pw_d->id);
+		}
+	}
+}
+
+static struct pse_power_domain *devm_pse_alloc_pw_d(struct device *dev)
+{
+	struct pse_power_domain *pw_d;
+	int index, ret;
+
+        pw_d = devm_kzalloc(dev, sizeof(*pw_d), GFP_KERNEL);
+	if (!pw_d)
+		return ERR_PTR(-ENOMEM);
+
+	ret = xa_alloc(&pse_pw_d_map, &index, pw_d, xa_limit_31b, GFP_KERNEL);
+	if (ret)
+		return ERR_PTR(ret);
+
+	pw_d->id = index;
+	return pw_d;
+}
+
+static int pse_get_power_budget(struct regulator *supply)
+{
+	int ret, uV;
+	s64 tmp_64;
+
+	ret = regulator_get_voltage(supply);
+	if (ret < 0)
+		return ret;
+
+	uV = ret;
+	ret = regulator_get_power_budget(supply);
+	if (ret < 0)
+		return ret;
+
+	tmp_64 = ret;
+	tmp_64 *= uV;
+	/* mW = uV * uA / 1000000000 */
+	return DIV_ROUND_CLOSEST_ULL(tmp_64, 1000000000);
+}
+
+static int pse_register_pw_ds(struct pse_controller_dev *pcdev)
+{
+	int i, ret;
+
+	for (i = 0; i < pcdev->nr_lines; i++) {
+		struct regulator_dev *rdev = pcdev->pi[i].rdev;
+		struct regulator *supply = supply;
+		struct pse_power_domain *pw_d;
+		bool present = false;
+		unsigned long index;
+		int pw_budget;
+
+		/* No regulator or regulator parent supply registered.
+		 * We need a regulator parent to register a PSE power domain
+		 */
+		if (!rdev || !rdev->supply)
+			continue;
+
+		xa_for_each(&pse_pw_d_map, index, pw_d) {
+			/* Power supply already registered as a PSE power
+			 * domain.
+			 */
+			if (pw_d->supply == rdev->supply) {
+				present = true;
+				pcdev->pi[i].pw_d = pw_d;
+				break;
+			}
+		}
+		if (present)
+			break;
+
+		ret = pse_get_power_budget(rdev->supply);
+		if (ret < 0) {
+			dev_warn(pcdev->dev,
+				 "can't read power budget from PI %d, no power domain will be associated\n",
+				 i);
+			continue;
+		}
+		pw_budget = ret;
+
+		pw_d = devm_pse_alloc_pw_d(pcdev->dev);
+		if (IS_ERR_OR_NULL(pw_d))
+			return PTR_ERR(pw_d);
+
+		pw_d->pw_budget = pw_budget;
+		supply = regulator_get(pcdev->dev, rdev->supply_name);
+		if (IS_ERR(supply)) {
+			xa_erase(&pse_pw_d_map, pw_d->id);
+			return PTR_ERR(supply);
+		}
+
+		pw_d->supply = rdev->supply;
+		pcdev->pi[i].pw_d = pw_d;
+	}
+
+	return 0;
+}
+
 /**
  * pse_controller_register - register a PSE controller device
  * @pcdev: a pointer to the initialized PSE controller device
@@ -488,6 +604,10 @@ int pse_controller_register(struct pse_controller_dev *pcdev)
 			goto free_pse_ida;
 	}
 
+	ret = pse_register_pw_ds(pcdev);
+	if (ret)
+		goto free_pse_ida;
+
 	mutex_lock(&pse_list_mutex);
 	list_add(&pcdev->list, &pse_controller_list);
 	mutex_unlock(&pse_list_mutex);
@@ -507,6 +627,7 @@ EXPORT_SYMBOL_GPL(pse_controller_register);
 void pse_controller_unregister(struct pse_controller_dev *pcdev)
 {
 	pse_release_pis(pcdev);
+	pse_flush_pw_ds(pcdev);
 	ida_free(&pse_ida, pcdev->id);
 	mutex_lock(&pse_list_mutex);
 	list_del(&pcdev->list);

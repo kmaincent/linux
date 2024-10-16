@@ -4623,6 +4623,17 @@ int regulator_get_current_limit(struct regulator *regulator)
 EXPORT_SYMBOL_GPL(regulator_get_current_limit);
 
 /**
+ * regulator_get_power_budget - get regulator total power budget
+ * @regulator: regulator source
+ *
+ * Return: Power budget of the regulator in mW.
+ */
+int regulator_get_power_budget(struct regulator *regulator)
+{
+	return regulator->rdev->constraints->pw_budget;
+}
+
+/**
  * regulator_set_mode - set regulator operating mode
  * @regulator: regulator source
  * @mode: operating mode - one of the REGULATOR_MODE constants

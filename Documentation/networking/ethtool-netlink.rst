@@ -1807,6 +1807,7 @@ Kernel response contents:
                                                       on the PoE PSE
   ``ETHTOOL_A_PSE_PRIO``                         u32  Priority of the PoE PSE
                                                       currently configured
+  ``ETHTOOL_A_PSE_ID``                           u32  Index of the PSE
   ==========================================  ======  =============================
 
 When set, the optional ``ETHTOOL_A_PODL_PSE_ADMIN_STATE`` attribute identifies
@@ -1888,6 +1889,9 @@ the PSE maximum priority value.
 When set, the optional ``ETHTOOL_A_PSE_PRIO`` attributes is used to
 identifies the currently configured PSE priority.
 For a description of PSE priority attributes, see ``PSE_SET``.
+
+The ``ETHTOOL_A_PSE_ID`` attribute identifies the index of the PSE
+controller.
 
 PSE_SET
 =======

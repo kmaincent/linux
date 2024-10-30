@@ -1528,6 +1528,10 @@ attribute-sets:
         name: pse-prio
         type: u32
         name-prefix: ethtool-a-
+      -
+        name: pse-id
+        type: u32
+        name-prefix: ethtool-a-
   -
     name: flow
     attr-cnt-name: --ethtool-a-flow-cnt
@@ -2476,6 +2480,7 @@ operations:
             - pse-pw-d-id
             - pse-prio-max
             - pse-prio
+            - pse-id
       dump: *pse-get-op
     -
       name: pse-set

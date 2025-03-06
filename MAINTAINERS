@@ -14502,7 +14502,7 @@ M:	Russell King <linux@armlinux.org.uk>
 M:	Marek Behún <kabel@kernel.org>
 L:	netdev@vger.kernel.org
 S:	Maintained
-F:	drivers/net/phy/marvell10g.c
+F:	drivers/net/phy/marvell/marvell10g.c
 
 MARVELL MVEBU THERMAL DRIVER
 M:	Miquel Raynal <miquel.raynal@bootlin.com>

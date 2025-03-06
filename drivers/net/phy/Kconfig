@@ -244,28 +244,7 @@ config LSI_ET1011C_PHY
 	help
 	  Supports the LSI ET1011C PHY.
 
-config MARVELL_PHY
-	tristate "Marvell Alaska PHYs"
-	help
-	  Currently has a driver for the 88E1XXX
-
-config MARVELL_10G_PHY
-	tristate "Marvell Alaska 10Gbit PHYs"
-	help
-	  Support for the Marvell Alaska MV88X3310 and compatible PHYs.
-
-config MARVELL_88Q2XXX_PHY
-	tristate "Marvell 88Q2XXX PHY"
-	depends on HWMON || HWMON=n
-	help
-	  Support for the Marvell 88Q2XXX 100/1000BASE-T1 Automotive Ethernet
-	  PHYs.
-
-config MARVELL_88X2222_PHY
-	tristate "Marvell 88X2222 PHY"
-	help
-	  Support for the Marvell 88X2222 Dual-port Multi-speed Ethernet
-	  Transceiver.
+source "drivers/net/phy/marvell/Kconfig"
 
 config MAXLINEAR_GPHY
 	tristate "Maxlinear Ethernet PHYs"

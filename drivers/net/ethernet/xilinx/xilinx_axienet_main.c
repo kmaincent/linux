@@ -67,9 +67,22 @@ static void axienet_rx_submit_desc(struct net_device *ndev);
 
 /* Match table for of_platform binding */
 static const struct of_device_id axienet_of_match[] = {
-	{ .compatible = "xlnx,axi-ethernet-1.00.a", },
-	{ .compatible = "xlnx,axi-ethernet-1.01.a", },
-	{ .compatible = "xlnx,axi-ethernet-2.01.a", },
+	{
+		.compatible = "xlnx,axi-ethernet-1.00.a",
+		.data = (void *)AXIENET_1_2p5G
+	},
+	{
+		.compatible = "xlnx,axi-ethernet-1.01.a",
+		.data = (void *)AXIENET_1_2p5G
+	},
+	{
+		.compatible = "xlnx,axi-ethernet-2.01.a",
+		.data = (void *)AXIENET_1_2p5G
+	},
+	{
+		.compatible = "xlnx,xxv-ethernet-1.0",
+		.data = (void *)AXIENET_10G_25G
+	},
 	{},
 };
 
@@ -126,6 +139,28 @@ static struct axienet_option axienet_options[] = {
 		.opt = XAE_OPTION_RXEN,
 		.reg = XAE_RCW1_OFFSET,
 		.m_or = XAE_RCW1_RX_MASK,
+	},
+	{}
+};
+
+/* Option table for setting up Axi Ethernet hardware options */
+static struct axienet_option xxvenet_options[] = {
+	{ /* Turn on FCS stripping on receive packets */
+		.opt = XAE_OPTION_FCS_STRIP,
+		.reg = XXV_RCW1_OFFSET,
+		.m_or = XXV_RCW1_FCS_MASK,
+	}, { /* Turn on FCS insertion on transmit packets */
+		.opt = XAE_OPTION_FCS_INSERT,
+		.reg = XXV_TC_OFFSET,
+		.m_or = XXV_TC_FCS_MASK,
+	}, { /* Enable transmitter */
+		.opt = XAE_OPTION_TXEN,
+		.reg = XXV_TC_OFFSET,
+		.m_or = XXV_TC_TX_MASK,
+	}, { /* Enable receiver */
+		.opt = XAE_OPTION_RXEN,
+		.reg = XXV_RCW1_OFFSET,
+		.m_or = XXV_RCW1_RX_MASK,
 	},
 	{}
 };
@@ -535,7 +570,12 @@ static void axienet_setoptions(struct net_device *ndev, u32 options)
 {
 	int reg;
 	struct axienet_local *lp = netdev_priv(ndev);
-	struct axienet_option *tp = &axienet_options[0];
+	struct axienet_option *tp;
+
+	if (lp->ip_type == AXIENET_10G_25G)
+		tp = &xxvenet_options[0];
+	else
+		tp = &axienet_options[0];
 
 	while (tp->opt) {
 		reg = ((axienet_ior(lp, tp->reg)) & ~(tp->m_or));
@@ -2758,6 +2798,7 @@ static void axienet_dma_err_handler(struct work_struct *work)
  */
 static int axienet_probe(struct platform_device *pdev)
 {
+	const struct of_device_id *of_id;
 	int ret;
 	struct device_node *np;
 	struct axienet_local *lp;
@@ -2788,6 +2829,14 @@ static int axienet_probe(struct platform_device *pdev)
 	lp->rx_bd_num = RX_BD_NUM_DEFAULT;
 	lp->tx_bd_num = TX_BD_NUM_DEFAULT;
 
+	of_id = of_match_node(axienet_of_match, pdev->dev.of_node);
+	if (!of_id) {
+		ret = -ENODEV;
+		goto free_netdev;
+	}
+
+	lp->ip_type = (unsigned long)of_id->data;
+
 	u64_stats_init(&lp->rx_stat_sync);
 	u64_stats_init(&lp->tx_stat_sync);
 
@@ -2812,9 +2861,15 @@ static int axienet_probe(struct platform_device *pdev)
 		goto free_netdev;
 	}
 
-	lp->misc_clks[0].id = "axis_clk";
-	lp->misc_clks[1].id = "ref_clk";
-	lp->misc_clks[2].id = "mgt_clk";
+	if (lp->ip_type == AXIENET_10G_25G) {
+		lp->misc_clks[0].id = "rx_core_clk";
+		lp->misc_clks[1].id = "ref_clk";
+		lp->misc_clks[2].id = "dclk";
+	} else {
+		lp->misc_clks[0].id = "axis_clk";
+		lp->misc_clks[1].id = "ref_clk";
+		lp->misc_clks[2].id = "mgt_clk";
+	}
 
 	ret = devm_clk_bulk_get_optional(&pdev->dev, XAE_NUM_MISC_CLOCKS, lp->misc_clks);
 	if (ret)

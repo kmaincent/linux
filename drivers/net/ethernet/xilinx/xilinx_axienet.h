@@ -360,6 +360,30 @@
 #define XLNX_MII_STD_SELECT_REG		0x11
 #define XLNX_MII_STD_SELECT_SGMII	BIT(0)
 
+/* XXV MAC Register Definitions */
+#define XXV_GT_RESET_OFFSET		0x00000000
+#define XXV_TC_OFFSET			0x0000000C
+#define XXV_RCW1_OFFSET			0x00000014
+
+/* XXV MAC Register Mask Definitions */
+#define XXV_GT_RESET_MASK	BIT(0)
+#define XXV_TC_TX_MASK		BIT(0)
+#define XXV_TC_FCS_MASK		BIT(1)
+#define XXV_RCW1_RX_MASK	BIT(0)
+#define XXV_RCW1_FCS_MASK	BIT(1)
+
+/**
+ * enum axienet_ip_type - AXIENET IP/MAC type.
+ *
+ * @AXIENET_1_2p5G:	 IP is 1G/2.5G
+ * @AXIENET_10G_25G:	 IP type is 10G/25G MAC(XXV MAC).
+ *
+ */
+enum axienet_ip_type {
+	AXIENET_1_2p5G = 0,
+	AXIENET_10G_25G,
+};
+
 /* enum temac_stat - TEMAC statistics counters
  *
  * Index of statistics counters within the TEMAC. This must match the
@@ -545,6 +569,7 @@ struct skbuf_dma_descriptor {
  * @tx_ring_tail: TX skb ring buffer tail index.
  * @rx_ring_head: RX skb ring buffer head index.
  * @rx_ring_tail: RX skb ring buffer tail index.
+ * @ip_type: Axienet IP type.
  */
 struct axienet_local {
 	struct net_device *ndev;
@@ -626,6 +651,7 @@ struct axienet_local {
 	int tx_ring_tail;
 	int rx_ring_head;
 	int rx_ring_tail;
+	enum axienet_ip_type ip_type;
 };
 
 /**

@@ -183,8 +183,8 @@ static dma_addr_t desc_get_phys_addr(struct axienet_local *lp,
  */
 static void axienet_dma_bd_release(struct net_device *ndev)
 {
-	int i;
 	struct axienet_local *lp = netdev_priv(ndev);
+	int i;
 
 	/* If we end up here, tx_bd_v must have been DMA allocated. */
 	dma_free_coherent(lp->dev,
@@ -334,9 +334,9 @@ static void axienet_dma_start(struct axienet_local *lp)
  */
 static int axienet_dma_bd_init(struct net_device *ndev)
 {
-	int i;
-	struct sk_buff *skb;
 	struct axienet_local *lp = netdev_priv(ndev);
+	struct sk_buff *skb;
+	int i;
 
 	/* Reset the indexes which are used for accessing the BDs */
 	lp->tx_bd_ci = 0;
@@ -462,9 +462,9 @@ static int netdev_set_mac_address(struct net_device *ndev, void *p)
  */
 static void axienet_set_multicast_list(struct net_device *ndev)
 {
-	int i = 0;
-	u32 reg, af0reg, af1reg;
 	struct axienet_local *lp = netdev_priv(ndev);
+	u32 reg, af0reg, af1reg;
+	int i = 0;
 
 	reg = axienet_ior(lp, XAE_FMI_OFFSET);
 	reg &= ~XAE_FMI_PM_MASK;
@@ -533,9 +533,9 @@ static void axienet_set_multicast_list(struct net_device *ndev)
  */
 static void axienet_setoptions(struct net_device *ndev, u32 options)
 {
-	int reg;
-	struct axienet_local *lp = netdev_priv(ndev);
 	struct axienet_option *tp = &axienet_options[0];
+	struct axienet_local *lp = netdev_priv(ndev);
+	int reg;
 
 	while (tp->opt) {
 		reg = ((axienet_ior(lp, tp->reg)) & ~(tp->m_or));
@@ -652,8 +652,8 @@ out:
  */
 static void axienet_dma_stop(struct axienet_local *lp)
 {
-	int count;
 	u32 cr, sr;
+	int count;
 
 	spin_lock_irq(&lp->rx_cr_lock);
 
@@ -706,8 +706,8 @@ static void axienet_dma_stop(struct axienet_local *lp)
  */
 static int axienet_device_reset(struct net_device *ndev)
 {
-	u32 axienet_status;
 	struct axienet_local *lp = netdev_priv(ndev);
+	u32 axienet_status;
 	int ret;
 
 	lp->max_frm_size = XAE_MAX_VLAN_FRAME_SIZE;
@@ -1043,15 +1043,15 @@ static int axienet_tx_poll(struct napi_struct *napi, int budget)
 static netdev_tx_t
 axienet_start_xmit(struct sk_buff *skb, struct net_device *ndev)
 {
-	u32 ii;
-	u32 num_frag;
+	struct axienet_local *lp = netdev_priv(ndev);
+	u32 orig_tail_ptr, new_tail_ptr;
+	struct axidma_bd *cur_p;
+	dma_addr_t tail_p, phys;
 	u32 csum_start_off;
 	u32 csum_index_off;
 	skb_frag_t *frag;
-	dma_addr_t tail_p, phys;
-	u32 orig_tail_ptr, new_tail_ptr;
-	struct axienet_local *lp = netdev_priv(ndev);
-	struct axidma_bd *cur_p;
+	u32 num_frag;
+	u32 ii;
 
 	orig_tail_ptr = lp->tx_bd_tail;
 	new_tail_ptr = orig_tail_ptr;
@@ -1191,14 +1191,14 @@ static void axienet_dma_rx_cb(void *data, const struct dmaengine_result *result)
  */
 static int axienet_rx_poll(struct napi_struct *napi, int budget)
 {
-	u32 length;
+	struct axienet_local *lp = container_of(napi, struct axienet_local, napi_rx);
+	struct sk_buff *skb, *new_skb;
+	struct axidma_bd *cur_p;
+	dma_addr_t tail_p = 0;
+	int packets = 0;
 	u32 csumstatus;
 	u32 size = 0;
-	int packets = 0;
-	dma_addr_t tail_p = 0;
-	struct axidma_bd *cur_p;
-	struct sk_buff *skb, *new_skb;
-	struct axienet_local *lp = container_of(napi, struct axienet_local, napi_rx);
+	u32 length;
 
 	cur_p = &lp->rx_bd_v[lp->rx_bd_ci];
 
@@ -1320,10 +1320,11 @@ static int axienet_rx_poll(struct napi_struct *napi, int budget)
  */
 static irqreturn_t axienet_tx_irq(int irq, void *_ndev)
 {
-	unsigned int status;
 	struct net_device *ndev = _ndev;
-	struct axienet_local *lp = netdev_priv(ndev);
+	struct axienet_local *lp;
+	unsigned int status;
 
+	lp = netdev_priv(ndev);
 	status = axienet_dma_in32(lp, XAXIDMA_TX_SR_OFFSET);
 
 	if (!(status & XAXIDMA_IRQ_ALL_MASK))
@@ -1368,10 +1369,11 @@ static irqreturn_t axienet_tx_irq(int irq, void *_ndev)
  */
 static irqreturn_t axienet_rx_irq(int irq, void *_ndev)
 {
-	unsigned int status;
 	struct net_device *ndev = _ndev;
-	struct axienet_local *lp = netdev_priv(ndev);
+	struct axienet_local *lp;
+	unsigned int status;
 
+	lp = netdev_priv(ndev);
 	status = axienet_dma_in32(lp, XAXIDMA_RX_SR_OFFSET);
 
 	if (!(status & XAXIDMA_IRQ_ALL_MASK))
@@ -1418,9 +1420,10 @@ static irqreturn_t axienet_rx_irq(int irq, void *_ndev)
 static irqreturn_t axienet_eth_irq(int irq, void *_ndev)
 {
 	struct net_device *ndev = _ndev;
-	struct axienet_local *lp = netdev_priv(ndev);
+	struct axienet_local *lp;
 	unsigned int pending;
 
+	lp = netdev_priv(ndev);
 	pending = axienet_ior(lp, XAE_IP_OFFSET);
 	if (!pending)
 		return IRQ_NONE;
@@ -1588,8 +1591,8 @@ err_dma_release_tx:
  */
 static int axienet_init_legacy_dma(struct net_device *ndev)
 {
-	int ret;
 	struct axienet_local *lp = netdev_priv(ndev);
+	int ret;
 
 	/* Enable worker thread for Axi DMA error handling */
 	lp->stopping = false;
@@ -1645,8 +1648,8 @@ err_tx_irq:
  */
 static int axienet_open(struct net_device *ndev)
 {
-	int ret;
 	struct axienet_local *lp = netdev_priv(ndev);
+	int ret;
 
 	/* When we do an Axi Ethernet reset, it resets the complete core
 	 * including the MDIO. MDIO must be disabled before resetting.
@@ -1939,9 +1942,9 @@ static int axienet_ethtools_get_regs_len(struct net_device *ndev)
 static void axienet_ethtools_get_regs(struct net_device *ndev,
 				      struct ethtool_regs *regs, void *ret)
 {
-	u32 *data = (u32 *)ret;
-	size_t len = sizeof(u32) * AXIENET_REGS_N;
 	struct axienet_local *lp = netdev_priv(ndev);
+	size_t len = sizeof(u32) * AXIENET_REGS_N;
+	u32 *data = (u32 *)ret;
 
 	regs->version = 0;
 	regs->len = len;
@@ -2110,12 +2113,14 @@ static u32 axienet_dim_coalesce_count_rx(struct axienet_local *lp)
  */
 static void axienet_rx_dim_work(struct work_struct *work)
 {
-	struct axienet_local *lp =
-		container_of(work, struct axienet_local, rx_dim.work);
-	u32 cr = axienet_calc_cr(lp, axienet_dim_coalesce_count_rx(lp), 0);
-	u32 mask = XAXIDMA_COALESCE_MASK | XAXIDMA_IRQ_IOC_MASK |
-		   XAXIDMA_IRQ_ERROR_MASK;
+	struct axienet_local *lp = container_of(work, struct axienet_local,
+						rx_dim.work);
+	u32 mask;
+	u32 cr;
 
+	cr = axienet_calc_cr(lp, axienet_dim_coalesce_count_rx(lp), 0);
+	mask = XAXIDMA_COALESCE_MASK | XAXIDMA_IRQ_IOC_MASK |
+	       XAXIDMA_IRQ_ERROR_MASK;
 	axienet_update_coalesce_rx(lp, cr, mask);
 	lp->rx_dim.state = DIM_START_MEASURE;
 }
@@ -2207,10 +2212,10 @@ axienet_ethtools_set_coalesce(struct net_device *ndev,
 			      struct kernel_ethtool_coalesce *kernel_coal,
 			      struct netlink_ext_ack *extack)
 {
-	struct axienet_local *lp = netdev_priv(ndev);
 	bool new_dim = ecoalesce->use_adaptive_rx_coalesce;
-	bool old_dim = lp->rx_dim_enabled;
+	struct axienet_local *lp = netdev_priv(ndev);
 	u32 cr, mask = ~XAXIDMA_CR_RUNSTOP_MASK;
+	bool old_dim = lp->rx_dim_enabled;
 
 	if (ecoalesce->rx_max_coalesced_frames > 255 ||
 	    ecoalesce->tx_max_coalesced_frames > 255) {
@@ -2661,12 +2666,12 @@ static const struct phylink_mac_ops axienet_phylink_ops = {
  */
 static void axienet_dma_err_handler(struct work_struct *work)
 {
-	u32 i;
-	u32 axienet_status;
-	struct axidma_bd *cur_p;
 	struct axienet_local *lp = container_of(work, struct axienet_local,
 						dma_err_task);
 	struct net_device *ndev = lp->ndev;
+	struct axidma_bd *cur_p;
+	u32 axienet_status;
+	u32 i;
 
 	/* Don't bother if we are going to stop anyway */
 	if (READ_ONCE(lp->stopping))
@@ -2758,14 +2763,14 @@ static void axienet_dma_err_handler(struct work_struct *work)
  */
 static int axienet_probe(struct platform_device *pdev)
 {
-	int ret;
-	struct device_node *np;
 	struct axienet_local *lp;
 	struct net_device *ndev;
 	struct resource *ethres;
+	struct device_node *np;
 	u8 mac_addr[ETH_ALEN];
 	int addr_width = 32;
 	u32 value;
+	int ret;
 
 	ndev = alloc_etherdev(sizeof(*lp));
 	if (!ndev)

@@ -1077,6 +1077,7 @@ static void phylink_pcs_neg_mode(struct phylink *pl, struct phylink_pcs *pcs,
 
 	if (pcs)
 		pcs_ib_caps = phylink_pcs_inband_caps(pcs, interface);
+pr_err("%s : %d pcs_caps 0x%x\n", __func__, __LINE__, pcs_ib_caps);
 
 	if (pl->phydev)
 		phy_ib_caps = phy_inband_caps(pl->phydev, interface);
@@ -1380,10 +1381,12 @@ static void phylink_mac_pcs_get_state(struct phylink *pl,
 
 	autoneg = pl->pcs_neg_mode == PHYLINK_PCS_NEG_INBAND_ENABLED;
 	if (autoneg) {
+		pr_err("%s : %d\n", __func__, __LINE__);
 		state->speed = SPEED_UNKNOWN;
 		state->duplex = DUPLEX_UNKNOWN;
 		state->pause = MLO_PAUSE_NONE;
 	} else {
+		pr_err("%s : %d\n", __func__, __LINE__);
 		state->speed =  pl->link_config.speed;
 		state->duplex = pl->link_config.duplex;
 		state->pause = pl->link_config.pause;
@@ -2791,6 +2794,7 @@ static bool phylink_validate_pcs_inband_autoneg(struct phylink *pl,
 		mask = LINK_INBAND_ENABLE;
 	else
 		mask = LINK_INBAND_DISABLE;
+pr_err("%s : %d, inband 0x%x mask 0x%x\n", __func__, __LINE__, inband, mask);
 
 	/* Check whether the PCS implements the required mode */
 	return !!(inband & mask);
@@ -3574,6 +3578,7 @@ static int phylink_sfp_config_optical(struct phylink *pl)
 	struct phylink_link_state config;
 	phy_interface_t interface;
 	int ret;
+pr_err("%s : %d\n", __func__, __LINE__);
 
 	phylink_dbg(pl, "optical SFP: interfaces=[mac=%*pbl, sfp=%*pbl]\n",
 		    (int)PHY_INTERFACE_MODE_MAX,
@@ -3658,6 +3663,7 @@ static int phylink_sfp_module_insert(void *upstream,
 	pl->sfp_may_have_phy = sfp_may_have_phy(pl->sfp_bus, id);
 	if (pl->sfp_may_have_phy)
 		return 0;
+pr_err("%s : %d\n", __func__, __LINE__);
 
 	return phylink_sfp_config_optical(pl);
 }
@@ -3677,6 +3683,7 @@ static int phylink_sfp_module_start(void *upstream)
 	 */
 	if (!pl->sfp_may_have_phy)
 		return 0;
+pr_err("%s : %d\n", __func__, __LINE__);
 
 	return phylink_sfp_config_optical(pl);
 }

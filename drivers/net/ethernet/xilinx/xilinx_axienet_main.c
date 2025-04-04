@@ -628,6 +628,7 @@ static void axienet_refresh_stats(struct work_struct *work)
 	struct axienet_local *lp = container_of(work, struct axienet_local,
 						stats_work.work);
 
+pr_err("%s : %d\n", __func__, __LINE__);
 	mutex_lock(&lp->stats_lock);
 	axienet_stats_update(lp, false);
 	mutex_unlock(&lp->stats_lock);
@@ -848,9 +849,15 @@ static int axienet_xxv_device_reset(struct net_device *ndev)
 	u32 val;
 	int ret;
 
-	ret = axienet_xxv_gt_reset(ndev);
-	if (ret)
-		return ret;
+	if (lp->ksght_reset_regs) {
+		iowrite32(0x1, lp->ksght_reset_regs);
+		mdelay(1);
+		iowrite32(0x0, lp->ksght_reset_regs);
+	} else {
+		ret = axienet_xxv_gt_reset(ndev);
+		if (ret)
+			return ret;
+	}
 
 	if (ndev->mtu > XAE_MTU && ndev->mtu <= XAE_JUMBO_MTU)
 		lp->max_frm_size = ndev->mtu + VLAN_ETH_HLEN +
@@ -1755,6 +1762,7 @@ static int axienet_init_legacy_dma(struct net_device *ndev)
 
 	napi_enable(&lp->napi_rx);
 	napi_enable(&lp->napi_tx);
+pr_err("%s : %d\n", __func__, __LINE__);
 
 	/* Enable interrupts for Axi DMA Tx */
 	ret = request_irq(lp->tx_irq, axienet_tx_irq, IRQF_SHARED,
@@ -1805,6 +1813,7 @@ static int axienet_open(struct net_device *ndev)
 {
 	struct axienet_local *lp = netdev_priv(ndev);
 	int ret;
+pr_err("%s : %d\n", __func__, __LINE__);
 
 	/* When we do an Axi Ethernet reset, it resets the complete core
 	 * including the MDIO. MDIO must be disabled before resetting.
@@ -1816,18 +1825,22 @@ static int axienet_open(struct net_device *ndev)
 	else
 		ret = axienet_device_reset(ndev);
 	axienet_unlock_mii(lp);
+pr_err("%s : %d\n", __func__, __LINE__);
 
 	ret = phylink_of_phy_connect(lp->phylink, lp->dev->of_node, 0);
 	if (ret) {
 		dev_err(lp->dev, "phylink_of_phy_connect() failed: %d\n", ret);
 		return ret;
 	}
+pr_err("%s : %d\n", __func__, __LINE__);
 
 	phylink_start(lp->phylink);
+pr_err("%s : %d\n", __func__, __LINE__);
 
 	/* Start the statistics refresh work */
 	if (lp->features & XAE_FEATURE_STATS)
 		schedule_delayed_work(&lp->stats_work, 0);
+pr_err("%s : %d\n", __func__, __LINE__);
 
 	if (lp->use_dmaengine) {
 		/* Enable interrupts for Axi Ethernet core (if defined) */
@@ -1846,6 +1859,7 @@ static int axienet_open(struct net_device *ndev)
 		if (ret)
 			goto err_phy;
 	}
+pr_err("%s : %d\n", __func__, __LINE__);
 
 	return 0;
 
@@ -2743,6 +2757,7 @@ static void axienet_pcs_get_state(struct phylink_pcs *pcs,
 			if (!blk_lock)
 				state->link = 1;
 		}
+pr_err("%s : %d link %d\n", __func__, __LINE__, state->link);
 
 		return;
 	}
@@ -3245,7 +3260,9 @@ static int axienet_10g_25g_probe(struct platform_device *pdev,
  */
 static int axienet_probe(struct platform_device *pdev)
 {
+
 	const struct of_device_id *of_id;
+	struct resource ksght_reset_res;
 	struct axienet_local *lp;
 	struct net_device *ndev;
 	struct resource *ethres;
@@ -3254,6 +3271,7 @@ static int axienet_probe(struct platform_device *pdev)
 	int addr_width = 32;
 	u32 value;
 	int ret;
+pr_err("%s : %d\n", __func__, __LINE__);
 
 	ndev = alloc_etherdev(sizeof(*lp));
 	if (!ndev)

@@ -659,6 +659,7 @@ struct axienet_local {
 	int rx_ring_head;
 	int rx_ring_tail;
 	enum axienet_ip_type ip_type;
+	void __iomem *ksght_reset_regs;
 };
 
 /**

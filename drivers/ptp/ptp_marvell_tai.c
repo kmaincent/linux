@@ -322,28 +322,23 @@ static int marvell_tai_global_config(struct marvell_tai *tai)
 	if (err)
 		return err;
 
-	/* Set ether-type for IEEE1588 packets */
-	err = tai->ops->ptp_global_write(tai->dev, PTPG_CONFIG_0, ETH_P_1588);
-	if (err < 0)
-		return err;
-
 	/* MsdIDTSEn - Enable timestamping on all PTP MessageIDs */
 	err = tai->ops->ptp_global_write(tai->dev, PTPG_CONFIG_1,
-					 MV_PTP_MSD_ID_TS_EN);
+					 BIT(PTP_MSGTYPE_SYNC) | BIT(PTP_MSGTYPE_DELAY_REQ));
 	if (err < 0)
 		return err;
 
 	/* TSArrPtr - Point to Arr0 registers */
 	err = tai->ops->ptp_global_write(tai->dev, PTPG_CONFIG_2,
-					 MV_PTP_TS_ARR_PTR);
+					 BIT(PTP_MSGTYPE_DELAY_REQ));
 	if (err < 0)
 		return err;
 
-	/* TSAtSFD - timestamp at SFD */
-	err = tai->ops->ptp_global_write(tai->dev, PTPG_CONFIG_3,
-					 PTPG_CONFIG_3_TSATSFD);
-	if (err < 0)
-		return err;
+	///* TSAtSFD - timestamp at SFD */
+	//err = tai->ops->ptp_global_write(tai->dev, PTPG_CONFIG_3,
+	//				 PTPG_CONFIG_3_TSATSFD);
+	//if (err < 0)
+	//	return err;
 
 	return 0;
 }

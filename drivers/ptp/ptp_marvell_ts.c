@@ -65,6 +65,7 @@ static struct marvell_rxts *marvell_rxq_get_rxts(struct marvell_rxq *rxq)
 static void marvell_rxq_init(struct marvell_rxq *rxq)
 {
 	int i;
+pr_err("%s : %d\n", __func__, __LINE__);
 
 	mutex_init(&rxq->rx_mutex);
 	INIT_LIST_HEAD(&rxq->rx_free);
@@ -249,7 +250,7 @@ bool marvell_ptp_rxtstamp(struct marvell_ptp *ptp, struct sk_buff *skb,
 	 */
 	msgidvec = BIT(msgid);
 	if (msgidvec & ~MV_PTP_MSD_ID_TS_EN) {
-		dev_dbg(ptp->dev, "not timestamping rx msgid %u seq %u\n",
+		dev_err(ptp->dev, "not timestamping rx msgid %u seq %u\n",
 			msgid, seq);
 		return false;
 	}
@@ -259,6 +260,7 @@ bool marvell_ptp_rxtstamp(struct marvell_ptp *ptp, struct sk_buff *skb,
 	 * fixed.
 	 */
 	q = !!(msgidvec & MV_PTP_TS_ARR_PTR);
+pr_err("%s : %d seq %d q %d\n", __func__, __LINE__, seq, q);
 
 	if (!marvell_rxq_rxtstamp(&ptp->rxq[q], skb, seq))
 		marvell_ptp_schedule(ptp);
@@ -450,7 +452,7 @@ int marvell_ptp_hwtstamp(struct marvell_ptp *ptp,
 	if (err)
 		return err;
 
-	err = ptp->ops->ptp_port_write(ptp->dev, PTP_PORT_CONFIG_2, cfg2);
+	err = ptp->ops->ptp_port_write(ptp->dev, PTP_PORT_CONFIG_2, 0);
 	if (err)
 		return err;
 
@@ -564,8 +566,10 @@ int marvell_ptp_probe(struct marvell_ptp *ptp, struct device *dev,
 	ptp->dev = dev;
 	ptp->tai = tai;
 
-	for (i = 0; i < ARRAY_SIZE(ptp->rxq); i++)
+	for (i = 0; i < ARRAY_SIZE(ptp->rxq); i++) {
+pr_err("%s : %d i %d\n", __func__, __LINE__, i);
 		marvell_rxq_init(&ptp->rxq[i]);
+	}
 
 	/* Configure this PTP port */
 	return marvell_ptp_port_config(ptp);

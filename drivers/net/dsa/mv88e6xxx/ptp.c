@@ -455,6 +455,7 @@ int mv88e6xxx_ptp_setup(struct mv88e6xxx_chip *chip)
 	const struct mv88e6xxx_cc_coeffs *cc_coeffs;
 	struct marvell_tai_param tai_param;
 	int i, n_pins, err;
+pr_err("%s : %d\n", __func__, __LINE__);
 
 	/* Set up the cycle counter */
 	cc_coeffs = mv88e6xxx_cc_coeff_get(chip);

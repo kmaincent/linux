@@ -97,6 +97,7 @@ parameters, info versions, and other features it supports.
    netdevsim
    nfp
    octeontx2
+   pd692x0
    prestera
    qed
    sfc

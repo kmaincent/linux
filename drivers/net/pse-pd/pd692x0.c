@@ -14,6 +14,7 @@
 #include <linux/pse-pd/pse.h>
 #include <linux/regulator/driver.h>
 #include <linux/regulator/machine.h>
+#include <net/devlink.h>
 
 #define PD692X0_PSE_NAME "pd692x0_pse"
 
@@ -29,6 +30,8 @@
 #define PD692X0_FW_MAJ_VER	3
 #define PD692X0_FW_MIN_VER	5
 #define PD692X0_FW_PATCH_VER	5
+
+#define PD692X0_USER_BYTE	42
 
 enum pd692x0_fw_state {
 	PD692X0_FW_UNKNOWN,
@@ -80,6 +83,9 @@ enum {
 	PD692X0_MSG_GET_PORT_PARAM,
 	PD692X0_MSG_GET_POWER_BANK,
 	PD692X0_MSG_SET_POWER_BANK,
+	PD692X0_MSG_SET_USER_BYTE,
+	PD692X0_MSG_SAVE_SYS_SETTINGS,
+	PD692X0_MSG_RESTORE_FACTORY,
 
 	/* add new message above here */
 	PD692X0_MSG_CNT
@@ -103,11 +109,13 @@ struct pd692x0_priv {
 	bool last_cmd_key;
 	unsigned long last_cmd_key_time;
 
+	bool cfg_saved;
 	enum ethtool_c33_pse_admin_state admin_state[PD692X0_MAX_PIS];
 	struct regulator_dev *manager_reg[PD692X0_MAX_MANAGERS];
 	int manager_pw_budget[PD692X0_MAX_MANAGERS];
 	int nmanagers;
 	struct pd692x0_matrix *port_matrix;
+	struct devlink *dl;
 };
 
 /* Template list of communication messages. The non-null bytes defined here
@@ -192,6 +200,24 @@ static const struct pd692x0_msg pd692x0_msg_template_list[PD692X0_MSG_CNT] = {
 	[PD692X0_MSG_SET_POWER_BANK] = {
 		.key = PD692X0_KEY_CMD,
 		.sub = {0x07, 0x0b, 0x57},
+	},
+	[PD692X0_MSG_SET_USER_BYTE] = {
+		.key = PD692X0_KEY_PRG,
+		.sub = {0x41, PD692X0_USER_BYTE},
+		.data = {0x4e, 0x4e, 0x4e, 0x4e,
+			 0x4e, 0x4e, 0x4e, 0x4e},
+	},
+	[PD692X0_MSG_SAVE_SYS_SETTINGS] = {
+		.key = PD692X0_KEY_PRG,
+		.sub = {0x06, 0x0f},
+		.data = {0x4e, 0x4e, 0x4e, 0x4e,
+			 0x4e, 0x4e, 0x4e, 0x4e},
+	},
+	[PD692X0_MSG_RESTORE_FACTORY] = {
+		.key = PD692X0_KEY_PRG,
+		.sub = {0x2d, 0x4e},
+		.data = {0x4e, 0x4e, 0x4e, 0x4e,
+			 0x4e, 0x4e, 0x4e, 0x4e},
 	},
 };
 
@@ -1268,9 +1294,12 @@ static int pd692x0_setup_pi_matrix(struct pse_controller_dev *pcdev)
 	if (ret)
 		goto err_managers_req_pw;
 
-	ret = pd692x0_hw_conf_init(priv);
-	if (ret)
-		goto err_managers_req_pw;
+	/* Do not init the conf if it is already saved */
+	if (!priv->cfg_saved) {
+		ret = pd692x0_hw_conf_init(priv);
+		if (ret)
+			goto err_managers_req_pw;
+	}
 
 	pd692x0_of_put_managers(priv, manager);
 	kfree(manager);
@@ -1727,14 +1756,118 @@ static const struct fw_upload_ops pd692x0_fw_ops = {
 	.cleanup = pd692x0_fw_cleanup,
 };
 
+/* Devlink Params APIs */
+enum pd692x0_devlink_param_id {
+	PD692X0_DEVLINK_PARAM_ID_BASE = DEVLINK_PARAM_GENERIC_ID_MAX,
+	PD692X0_DEVLINK_PARAM_ID_SAVE_CONF,
+	PD692X0_DEVLINK_PARAM_ID_RESET_CONF,
+};
+
+struct pd692x0_devlink {
+	struct pd692x0_priv *priv;
+};
+
+static int pd692x0_dl_conf_save(struct devlink *devlink,
+				struct netlink_ext_ack *extack)
+{
+	struct pd692x0_devlink *dl = devlink_priv(devlink);
+	struct pd692x0_priv *priv = dl->priv;
+	struct pd692x0_msg msg, buf = {0};
+	int ret;
+
+	mutex_lock(&priv->pcdev.lock);
+	ret = pd692x0_fw_unavailable(priv);
+	if (ret)
+		goto out;
+
+	msg = pd692x0_msg_template_list[PD692X0_MSG_SET_USER_BYTE];
+	ret = pd692x0_sendrecv_msg(priv, &msg, &buf);
+	if (ret)
+		goto out;
+
+	msg = pd692x0_msg_template_list[PD692X0_MSG_SAVE_SYS_SETTINGS];
+	ret = pd692x0_send_msg(priv, &msg);
+	if (ret) {
+		dev_err(&priv->client->dev,
+			"Failed to save the configuration (%pe)\n",
+			ERR_PTR(ret));
+		goto out;
+	}
+
+	msleep(50); /* Sleep 50ms as described in the datasheet */
+
+	ret = i2c_master_recv(priv->client, (u8 *)&buf, sizeof(buf));
+	if (ret != sizeof(buf)) {
+		if (ret >= 0)
+			ret = -EIO;
+		goto out;
+	}
+
+	ret = 0;
+
+out:
+	mutex_unlock(&priv->pcdev.lock);
+	return ret;
+}
+
+static int pd692x0_dl_conf_reset(struct devlink *devlink,
+				 struct netlink_ext_ack *extack)
+{
+	struct pd692x0_devlink *dl = devlink_priv(devlink);
+	struct pd692x0_priv *priv = dl->priv;
+	struct pd692x0_msg msg, buf = {0};
+	int ret;
+
+	mutex_lock(&priv->pcdev.lock);
+	ret = pd692x0_fw_unavailable(priv);
+	if (ret)
+		goto out;
+
+	msg = pd692x0_msg_template_list[PD692X0_MSG_RESTORE_FACTORY];
+	ret = pd692x0_send_msg(priv, &msg);
+	if (ret) {
+		dev_err(&priv->client->dev,
+			"Failed to reset the configuration (%pe)\n",
+			ERR_PTR(ret));
+		goto out;
+	}
+
+	msleep(100); /* Sleep 100ms as described in the datasheet */
+
+	ret = i2c_master_recv(priv->client, (u8 *)&buf, sizeof(buf));
+	if (ret != sizeof(buf)) {
+		if (ret >= 0)
+			ret = -EIO;
+		goto out;
+	}
+
+	ret = pd692x0_hw_conf_init(priv);
+	if (ret) {
+		dev_err(&priv->client->dev,
+			"Error configuring ports matrix (%pe)\n",
+			ERR_PTR(ret));
+	}
+
+out:
+	mutex_unlock(&priv->pcdev.lock);
+	return ret;
+}
+
+static const struct devlink_ops pd692x0_dl_ops = {
+	.conf_save = pd692x0_dl_conf_save,
+	.conf_reset = pd692x0_dl_conf_reset,
+};
+
 static int pd692x0_i2c_probe(struct i2c_client *client)
 {
 	static const char * const regulators[] = { "vdd", "vdda" };
 	struct pd692x0_msg msg, buf = {0}, zero = {0};
+	struct pd692x0_devlink *pd692x0_dl;
 	struct device *dev = &client->dev;
 	struct pd692x0_msg_ver ver;
 	struct pd692x0_priv *priv;
 	struct fw_upload *fwl;
+	struct devlink *dl;
 	int ret;
 
 	ret = devm_regulator_bulk_get_enable(dev, ARRAY_SIZE(regulators),
@@ -1793,6 +1926,9 @@ static int pd692x0_i2c_probe(struct i2c_client *client)
 		}
 	}
 
+	if (buf.data[2] == PD692X0_USER_BYTE)
+		priv->cfg_saved = true;
+
 	priv->np = dev->of_node;
 	priv->pcdev.nr_lines = PD692X0_MAX_PIS;
 	priv->pcdev.owner = THIS_MODULE;
@@ -1813,7 +1949,24 @@ static int pd692x0_i2c_probe(struct i2c_client *client)
 				     "failed to register to the Firmware Upload API\n");
 	priv->fwl = fwl;
 
+	dl = devlink_alloc(&pd692x0_dl_ops, sizeof(*pd692x0_dl), dev);
+	if (!dl) {
+		dev_err(dev, "devlink_alloc failed\n");
+		ret = -ENOMEM;
+		goto err_unregister_fw;
+	}
+
+	pd692x0_dl = devlink_priv(dl);
+	pd692x0_dl->priv = priv;
+	priv->dl = dl;
+	devlink_register(dl);
+
 	return 0;
+
+err_unregister_fw:
+	firmware_upload_unregister(priv->fwl);
+
+	return ret;
 }
 
 static void pd692x0_i2c_remove(struct i2c_client *client)
@@ -1821,6 +1974,7 @@ static void pd692x0_i2c_remove(struct i2c_client *client)
 	struct pd692x0_priv *priv = i2c_get_clientdata(client);
 
 	pd692x0_managers_free_pw_budget(priv);
+	devlink_unregister(priv->dl);
 	firmware_upload_unregister(priv->fwl);
 }
 

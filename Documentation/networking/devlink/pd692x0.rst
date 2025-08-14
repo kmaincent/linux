@@ -1,0 +1,24 @@
+.. SPDX-License-Identifier: GPL-2.0
+
+===========================
+PSE PD692x0 devlink support
+===========================
+
+This document describes the devlink features implemented by the PSE
+``PD692x0`` device drivers.
+
+Operations
+==========
+
+The ``PD692x0`` drivers implement the following devlink operations.
+
+.. list-table:: Devlink ops implemented
+   :widths: 5 85
+
+   * - Name
+     - Description
+   * - ``conf_save``
+     - Save the current configuration to non-volatile memory.
+   * - ``conf_reset``
+     - Reset the current and saved configuration located the non-volatile
+       memory.

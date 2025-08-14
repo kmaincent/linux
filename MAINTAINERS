@@ -20307,6 +20307,7 @@ L:	netdev@vger.kernel.org
 S:	Maintained
 F:	Documentation/devicetree/bindings/net/pse-pd/
 F:	Documentation/networking/devlink/devlink-conf.rst
+F:	Documentation/networking/devlink/pd692x0.rst
 F:	drivers/net/pse-pd/
 F:	net/devlink/conf.c
 F:	net/ethtool/pse-pd.c

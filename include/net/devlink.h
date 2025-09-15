@@ -1559,6 +1559,26 @@ struct devlink_ops {
 	enum devlink_selftest_status
 	(*selftest_run)(struct devlink *devlink, unsigned int id,
 			struct netlink_ext_ack *extack);
+
+	/**
+	 * conf_save - Save configuration to non-volatile memory
+	 * @devlink: Devlink instance
+	 * @extack: extack for reporting error messages
+	 *
+	 * Return: 0 on success, negative value otherwise.
+	 */
+	int (*conf_save)(struct devlink *devlink,
+			 struct netlink_ext_ack *extack);
+
+	/**
+	 * conf_reset - Reset configuration located in non-volatile memory
+	 * @devlink: Devlink instance
+	 * @extack: extack for reporting error messages
+	 *
+	 * Return: 0 on success, negative value otherwise.
+	 */
+	int (*conf_reset)(struct devlink *devlink,
+			  struct netlink_ext_ack *extack);
 };
 
 void *devlink_priv(struct devlink *devlink);

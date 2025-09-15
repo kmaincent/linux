@@ -857,6 +857,14 @@ attribute-sets:
         name: health-reporter-burst-period
         type: u64
         doc: Time (in msec) for recoveries before starting the grace period.
+      -
+        name: conf-save
+        type: flag
+        doc: Save device configuration to non-volatile memory.
+      -
+        name: conf-reset
+        type: flag
+        doc: Reset device configuration located in non-volatile memory.
   -
     name: dl-dev-stats
     subset-of: devlink
@@ -2325,3 +2333,18 @@ operations:
             - bus-name
             - dev-name
             - port-index
+    -
+      name: conf-set
+      doc: Manage device configuration.
+      attribute-set: devlink
+      dont-validate: [strict]
+      flags: [admin-perm]
+      do:
+        pre: devlink-nl-pre-doit
+        post: devlink-nl-post-doit
+        request:
+          attributes:
+            - bus-name
+            - dev-name
+            - conf-save
+            - conf-reset

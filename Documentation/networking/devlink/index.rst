@@ -56,6 +56,7 @@ general.
    :maxdepth: 1
 
    devlink-dpipe
+   devlink-conf
    devlink-eswitch-attr
    devlink-flash
    devlink-health

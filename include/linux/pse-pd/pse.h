@@ -351,7 +351,7 @@ int devm_pse_irq_helper(struct pse_controller_dev *pcdev, int irq,
 			int irq_flags, const struct pse_irq_desc *d);
 
 struct pse_control *of_pse_control_get(struct device_node *node,
-				       struct phy_device *phydev);
+				       struct net_device *net);
 void pse_control_put(struct pse_control *psec);
 
 int pse_ethtool_get_status(struct pse_control *psec,
@@ -373,7 +373,7 @@ bool pse_has_c33(struct pse_control *psec);
 #else
 
 static inline struct pse_control *of_pse_control_get(struct device_node *node,
-						     struct phy_device *phydev)
+						     struct net_device *net)
 {
 	return ERR_PTR(-ENOENT);
 }

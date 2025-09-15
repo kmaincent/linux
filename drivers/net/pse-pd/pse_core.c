@@ -32,7 +32,7 @@ static DEFINE_MUTEX(pse_pw_d_mutex);
  * @list: list entry for the pcdev's PSE controller list
  * @id: ID of the PSE line in the PSE controller device
  * @refcnt: Number of gets of this pse_control
- * @attached_phydev: PHY device pointer attached by the PSE control
+ * @attached_netdev: PHY device pointer attached by the PSE control
  */
 struct pse_control {
 	struct pse_controller_dev *pcdev;
@@ -40,7 +40,7 @@ struct pse_control {
 	struct list_head list;
 	unsigned int id;
 	struct kref refcnt;
-	struct phy_device *attached_phydev;
+	struct net_device *attached_netdev;
 };
 
 /**
@@ -270,10 +270,10 @@ static struct net_device *pse_control_get_netdev(struct pse_control *psec)
 {
 	ASSERT_RTNL();
 
-	if (!psec || !psec->attached_phydev)
+	if (!psec || !psec->attached_netdev)
 		return NULL;
 
-	return psec->attached_phydev->attached_dev;
+	return psec->attached_netdev;
 }
 
 /**
@@ -1408,7 +1408,7 @@ EXPORT_SYMBOL_GPL(pse_control_put);
 
 static struct pse_control *
 pse_control_get_internal(struct pse_controller_dev *pcdev, unsigned int index,
-			 struct phy_device *phydev)
+			 struct net_device *netdev)
 {
 	struct pse_control *psec;
 	int ret;
@@ -1455,7 +1455,7 @@ pse_control_get_internal(struct pse_controller_dev *pcdev, unsigned int index,
 	psec->pcdev = pcdev;
 	list_add(&psec->list, &pcdev->pse_control_head);
 	psec->id = index;
-	psec->attached_phydev = phydev;
+	psec->attached_netdev = netdev;
 	kref_init(&psec->refcnt);
 
 	return psec;
@@ -1510,7 +1510,7 @@ static int psec_id_xlate(struct pse_controller_dev *pcdev,
 }
 
 struct pse_control *of_pse_control_get(struct device_node *node,
-				       struct phy_device *phydev)
+				       struct net_device *netdev)
 {
 	struct pse_controller_dev *r, *pcdev;
 	struct of_phandle_args args;
@@ -1560,7 +1560,7 @@ struct pse_control *of_pse_control_get(struct device_node *node,
 	}
 
 	/* pse_list_mutex also protects the pcdev's pse_control list */
-	psec = pse_control_get_internal(pcdev, psec_id, phydev);
+	psec = pse_control_get_internal(pcdev, psec_id, netdev);
 
 out:
 	mutex_unlock(&pse_list_mutex);

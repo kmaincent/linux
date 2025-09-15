@@ -123,6 +123,24 @@
 		mod-def0-gpio = <&sfp_present 3 GPIO_ACTIVE_LOW>;
 		tx-disable-gpio = <&sfp_tx_disable 3 GPIO_ACTIVE_HIGH>;
 	};
+
+	pse_reg: pse-reg@0 {
+		compatible = "regulator-fixed";
+		regulator-name = "pse-reg";
+		regulator-power-budget-milliwatt = <45000>;
+	};
+
+	pse_reg2: pse-reg@2 {
+		compatible = "regulator-fixed";
+		regulator-name = "pse-reg2";
+		regulator-power-budget-milliwatt = <8000000>;
+	};
+
+	pse_reg3: pse-reg@3 {
+		compatible = "regulator-fixed";
+		regulator-name = "pse-reg3";
+		regulator-power-budget-milliwatt = <300000>;
+	};
 };
 
 &uart0 {
@@ -254,8 +272,9 @@
 		#address-cells = <1>;
 		#size-cells = <0>;
 
-			manager@0 {
+			manager0: manager@0 {
 				reg = <0>;
+				vmain-supply = <&pse_reg>;
 				#address-cells = <1>;
 				#size-cells = <0>;
 
@@ -292,8 +311,9 @@
 				       };
 			};
 
-			manager@1 {
+			manager1: manager@1 {
 				reg = <1>;
+				vmain-supply = <&pse_reg2>;
 				#address-cells = <1>;
 				#size-cells = <0>;
 
@@ -338,6 +358,7 @@
 			pd692x0_pi0: pse-pi@0 {
 				reg = <0>;
 				#pse-cells = <0>;
+				vpwr-supply = <&manager0>;
 				pairset-names = "alternative-a";
 				pairsets = <&phys2>;
 				polarity-supported = "MDI";
@@ -346,6 +367,7 @@
 			pd692x0_pi1: pse-pi@1 {
 				reg = <1>;
 				#pse-cells = <0>;
+				vpwr-supply = <&manager0>;
 				pairset-names = "alternative-a";
 				pairsets = <&phys3>;
 				polarity-supported = "MDI";
@@ -354,6 +376,7 @@
 			pd692x0_pi2: pse-pi@2 {
 				reg = <2>;
 				#pse-cells = <0>;
+				vpwr-supply = <&manager0>;
 				pairset-names = "alternative-a";
 				pairsets = <&phys0>;
 				polarity-supported = "MDI";
@@ -362,6 +385,7 @@
 			pd692x0_pi3: pse-pi@3 {
 				reg = <3>;
 				#pse-cells = <0>;
+				vpwr-supply = <&manager0>;
 				pairset-names = "alternative-a";
 				pairsets = <&phys1>;
 				polarity-supported = "MDI";
@@ -370,6 +394,7 @@
 			pd692x0_pi4: pse-pi@4 {
 				reg = <4>;
 				#pse-cells = <0>;
+				vpwr-supply = <&manager0>;
 				pairset-names = "alternative-a";
 				pairsets = <&phys5>;
 				polarity-supported = "MDI";
@@ -378,6 +403,7 @@
 			pd692x0_pi5: pse-pi@5 {
 				reg = <5>;
 				#pse-cells = <0>;
+				vpwr-supply = <&manager0>;
 				pairset-names = "alternative-a";
 				pairsets = <&phys4>;
 				polarity-supported = "MDI";
@@ -386,6 +412,7 @@
 			pd692x0_pi6: pse-pi@6 {
 				reg = <6>;
 				#pse-cells = <0>;
+				vpwr-supply = <&manager0>;
 				pairset-names = "alternative-a";
 				pairsets = <&phys7>;
 				polarity-supported = "MDI";
@@ -394,6 +421,7 @@
 			pd692x0_pi7: pse-pi@7 {
 				reg = <7>;
 				#pse-cells = <0>;
+				vpwr-supply = <&manager0>;
 				pairset-names = "alternative-a";
 				pairsets = <&phys6>;
 				polarity-supported = "MDI";

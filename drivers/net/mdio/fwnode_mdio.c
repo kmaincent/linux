@@ -31,7 +31,7 @@ fwnode_find_pse_control(struct fwnode_handle *fwnode,
 	if (!np)
 		return NULL;
 
-	psec = of_pse_control_get(np, phydev);
+	psec = of_pse_control_get(np, phydev->attached_dev);
 	if (PTR_ERR(psec) == -ENOENT)
 		return NULL;
 

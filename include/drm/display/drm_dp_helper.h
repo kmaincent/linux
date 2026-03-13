@@ -1048,4 +1048,15 @@ ssize_t drm_dp_vsc_sdp_pack(const struct drm_dp_vsc_sdp *vsc, struct dp_sdp *sdp
 int drm_dp_link_symbol_cycles(int lane_count, int pixels, int dsc_slice_count,
 			      int bpp_x16, int symbol_size, bool is_mst);
 
+int drm_dp_source_set_caps(struct drm_connector *connector,
+			   const struct drm_connector_dp_link_caps *link_caps);
+int drm_dp_sink_sync_caps(struct drm_connector *connector, struct drm_dp_aux *aux);
+int drm_dp_sink_set_caps(struct drm_connector *connector,
+			 const struct drm_connector_dp_link_caps *link_caps);
+void drm_dp_sink_reset_caps(struct drm_connector *connector);
+void drm_dp_set_cur_link_params(struct drm_connector *connector, int link_rate,
+				int lane_count, bool dsc_en);
+void drm_dp_set_max_link_params(struct drm_connector *connector, int link_rate,
+				int lane_count);
+
 #endif /* _DRM_DP_HELPER_H_ */

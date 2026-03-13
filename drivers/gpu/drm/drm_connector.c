@@ -792,6 +792,13 @@ void drm_connector_cleanup(struct drm_connector *connector)
 		connector->tile_group = NULL;
 	}
 
+	kfree(connector->dp.source_link_caps.link_rates);
+	connector->dp.source_link_caps.link_rates = NULL;
+	kfree(connector->dp.sink_link_caps.link_rates);
+	connector->dp.sink_link_caps.link_rates = NULL;
+	kfree(connector->dp.cur_link_info.link_rates);
+	connector->dp.cur_link_info.link_rates = NULL;
+
 	list_for_each_entry_safe(mode, t, &connector->probed_modes, head)
 		drm_mode_remove(connector, mode);
 

@@ -1987,6 +1987,57 @@ struct drm_connector_cec {
 	void *data;
 };
 
+#define DRM_DP_1LANE	BIT(0)
+#define DRM_DP_2LANE	BIT(1)
+#define DRM_DP_4LANE	BIT(2)
+#define DRM_NLANES_MASK (DRM_DP_1LANE | DRM_DP_2LANE | DRM_DP_4LANE)
+
+/**
+ * struct drm_connector_dp_link_caps - DRM DisplayPort link capabilities
+ */
+struct drm_connector_dp_link_caps {
+	/**
+	 * @nlanes: Bitmask of lanes number supported
+	 */
+	u8 nlanes;
+
+	/**
+	 * @nlink_rates: Number of link rates supported
+	 */
+	u32 nlink_rates;
+
+	/**
+	 * @link_rates: Array listing the supported link rates in deca-kbps
+	 */
+	const u32 *link_rates;
+
+	/**
+	 * @dsc: Display Stream Compression supported
+	 */
+	bool dsc;
+};
+
+/**
+ * struct drm_connector_dp - DRM Connector DisplayPort-related structure
+ */
+struct drm_connector_dp {
+	/**
+	 * @nlanes_property: Connector property to report the number of lanes
+	 */
+	struct drm_property *nlanes_property;
+
+	/**
+	 * @link_rate_property: Connector property to report the link rate
+	 */
+	struct drm_property *link_rate_property;
+
+	/**
+	 * @dsc_en_property: Connector property to report the Display Stream
+	 * Compression supporrt
+	 */
+	struct drm_property *dsc_en_property;
+};
+
 /**
  * struct drm_connector - central DRM connector control structure
  *
@@ -2410,6 +2461,11 @@ struct drm_connector {
 	 * @cec: CEC-related data.
 	 */
 	struct drm_connector_cec cec;
+
+	/**
+	 * @dp: DisplayPort-related variable and properties.
+	 */
+	struct drm_connector_dp dp;
 };
 
 #define obj_to_connector(x) container_of(x, struct drm_connector, base)

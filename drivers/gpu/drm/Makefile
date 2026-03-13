@@ -42,6 +42,7 @@ drm-y := \
 	drm_color_mgmt.o \
 	drm_colorop.o \
 	drm_connector.o \
+	drm_dp_connector.o \
 	drm_crtc.o \
 	drm_displayid.o \
 	drm_drv.o \

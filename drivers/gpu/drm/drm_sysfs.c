@@ -340,6 +340,122 @@ static const struct attribute_group *connector_dev_groups[] = {
 	NULL
 };
 
+static ssize_t drm_link_rates_show(u32 num_link_rates, const u32 *link_rates, char *buf)
+{
+	ssize_t size = 0;
+
+	if (!num_link_rates)
+		return 0;
+
+	/* We are using deca-kbps in the kernel historically, due to
+	 * calculation over the link rates that could overflow 32 bits.
+	 * Lets report link rates in kbps to avoid confusing the user
+	 */
+	size += sysfs_emit_at(buf, size, "%d", link_rates[0] * 10);
+	for (int i = 1; i < num_link_rates; i++)
+		size += sysfs_emit_at(buf, size, " %d", link_rates[i] * 10);
+
+	size += sysfs_emit_at(buf, size, "\n");
+	return size;
+}
+
+#define DRM_CONNECTOR_DP_ATTR_SHOW_LINK_RATES_NESTED(_name)                    \
+static ssize_t _name##_link_rates_show(struct device *device,                  \
+			    struct device_attribute *attr,                     \
+			    char *buf)                                         \
+{                                                                              \
+	struct drm_connector *connector = to_drm_connector(device);            \
+	ssize_t size;                                                          \
+	drm_modeset_lock(&connector->dev->mode_config.connection_mutex, NULL); \
+	size = drm_link_rates_show(connector->dp._name.nlink_rates,   \
+				   connector->dp._name.link_rates, buf); \
+	drm_modeset_unlock(&connector->dev->mode_config.connection_mutex);     \
+	return size;                                                           \
+}
+
+#define DRM_CONNECTOR_DP_ATTR_SHOW_SIMPLE_NESTED(_name,_info)                  \
+static ssize_t _name##_##_info##_show(struct device *device,                      \
+				   struct device_attribute *attr,              \
+				   char *buf)                                  \
+{                                                                              \
+	struct drm_connector *connector = to_drm_connector(device);            \
+	ssize_t size;                                                          \
+	drm_modeset_lock(&connector->dev->mode_config.connection_mutex, NULL); \
+	size = sysfs_emit(buf, "%d\n", connector->dp._name._info);	      \
+	drm_modeset_unlock(&connector->dev->mode_config.connection_mutex);     \
+	return size;                                                           \
+}
+
+#define DRM_CONNECTOR_DP_ATTR_SHOW_SIMPLE(_info)                               \
+static ssize_t _info##_show(struct device *device,                             \
+				   struct device_attribute *attr,              \
+				   char *buf)                                  \
+{                                                                              \
+	struct drm_connector *connector = to_drm_connector(device);            \
+	ssize_t size;                                                          \
+	drm_modeset_lock(&connector->dev->mode_config.connection_mutex, NULL); \
+	size = sysfs_emit(buf, "%d\n", connector->dp._info);	               \
+	drm_modeset_unlock(&connector->dev->mode_config.connection_mutex);     \
+	return size;                                                           \
+}
+
+static ssize_t cur_link_info_link_rate_show(struct device *device,
+					    struct device_attribute *attr,
+					    char *buf)
+{
+	struct drm_connector *connector = to_drm_connector(device);
+	ssize_t size;
+
+	drm_modeset_lock(&connector->dev->mode_config.connection_mutex, NULL);
+	size = drm_link_rates_show(connector->dp.cur_link_info.nlink_rates,
+				   connector->dp.cur_link_info.link_rates, buf);
+	drm_modeset_unlock(&connector->dev->mode_config.connection_mutex);
+	return size;
+}
+
+DRM_CONNECTOR_DP_ATTR_SHOW_SIMPLE_NESTED(source_link_caps, nlanes);
+DRM_CONNECTOR_DP_ATTR_SHOW_LINK_RATES_NESTED(source_link_caps);
+DRM_CONNECTOR_DP_ATTR_SHOW_SIMPLE_NESTED(source_link_caps, dsc);
+DRM_CONNECTOR_DP_ATTR_SHOW_SIMPLE_NESTED(sink_link_caps, nlanes);
+DRM_CONNECTOR_DP_ATTR_SHOW_LINK_RATES_NESTED(sink_link_caps);
+DRM_CONNECTOR_DP_ATTR_SHOW_SIMPLE_NESTED(sink_link_caps, dsc);
+DRM_CONNECTOR_DP_ATTR_SHOW_SIMPLE_NESTED(cur_link_info, nlanes);
+DRM_CONNECTOR_DP_ATTR_SHOW_SIMPLE_NESTED(cur_link_info, dsc);
+DRM_CONNECTOR_DP_ATTR_SHOW_SIMPLE(max_link_rate);
+DRM_CONNECTOR_DP_ATTR_SHOW_SIMPLE(max_lane_count);
+
+static DEVICE_ATTR_RO(source_link_caps_nlanes);
+static DEVICE_ATTR_RO(source_link_caps_link_rates);
+static DEVICE_ATTR_RO(source_link_caps_dsc);
+static DEVICE_ATTR_RO(sink_link_caps_nlanes);
+static DEVICE_ATTR_RO(sink_link_caps_link_rates);
+static DEVICE_ATTR_RO(sink_link_caps_dsc);
+static DEVICE_ATTR_RO(cur_link_info_nlanes);
+static DEVICE_ATTR_RO(cur_link_info_link_rate);
+static DEVICE_ATTR_RO(cur_link_info_dsc);
+static DEVICE_ATTR_RO(max_link_rate);
+static DEVICE_ATTR_RO(max_lane_count);
+
+static struct attribute *connector_dp_link_attrs[] = {
+	&dev_attr_source_link_caps_nlanes.attr,
+	&dev_attr_source_link_caps_link_rates.attr,
+	&dev_attr_source_link_caps_dsc.attr,
+	&dev_attr_sink_link_caps_nlanes.attr,
+	&dev_attr_sink_link_caps_link_rates.attr,
+	&dev_attr_sink_link_caps_dsc.attr,
+	&dev_attr_cur_link_info_nlanes.attr,
+	&dev_attr_cur_link_info_link_rate.attr,
+	&dev_attr_cur_link_info_dsc.attr,
+	&dev_attr_max_link_rate.attr,
+	&dev_attr_max_lane_count.attr,
+	NULL
+};
+
+static const struct attribute_group connector_dp_link_group = {
+	.name = "dp_link",
+	.attrs = connector_dp_link_attrs,
+};
+
 int drm_sysfs_connector_add(struct drm_connector *connector)
 {
 	struct drm_device *dev = connector->dev;
@@ -376,6 +492,14 @@ int drm_sysfs_connector_add(struct drm_connector *connector)
 
 	connector->kdev = kdev;
 
+	if (connector->dp.source_link_caps.nlanes) {
+		r = sysfs_create_group(&connector->kdev->kobj, &connector_dp_link_group);
+		if (r) {
+			drm_err(dev, "failed to create DP connector sysfs: %d\n", r);
+			goto err_dp_sysfs;
+		}
+	}
+
 	if (dev_fwnode(kdev)) {
 		r = component_add(kdev, &typec_connector_ops);
 		if (r)
@@ -384,6 +508,9 @@ int drm_sysfs_connector_add(struct drm_connector *connector)
 
 	return 0;
 
+err_dp_sysfs:
+	connector->kdev = NULL;
+	device_del(kdev);
 err_free:
 	put_device(kdev);
 	return r;

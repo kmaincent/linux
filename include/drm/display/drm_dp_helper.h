@@ -694,6 +694,11 @@ static inline int drm_dp_dpcd_write_byte(struct drm_dp_aux *aux,
 int drm_dp_read_dpcd_caps(struct drm_dp_aux *aux,
 			  u8 dpcd[DP_RECEIVER_CAP_SIZE]);
 
+int drm_dp_read_dpcd_supported_link_rates(struct drm_dp_aux *aux,
+					  u16 supported_link_rates[DP_MAX_SUPPORTED_RATES]);
+int drm_dp_read_dpcd_128b132b_supported_link_rates(struct drm_dp_aux *aux);
+bool drm_dp_read_dpcd_read_dsc_support(struct drm_dp_aux *aux);
+
 int drm_dp_dpcd_read_link_status(struct drm_dp_aux *aux,
 				 u8 status[DP_LINK_STATUS_SIZE]);
 
@@ -1031,5 +1036,19 @@ int drm_dp_max_dprx_data_rate(int max_link_rate, int max_lanes);
 ssize_t drm_dp_vsc_sdp_pack(const struct drm_dp_vsc_sdp *vsc, struct dp_sdp *sdp);
 int drm_dp_link_symbol_cycles(int lane_count, int pixels, int dsc_slice_count,
 			      int bpp_x16, int symbol_size, bool is_mst);
+
+int drm_dp_source_set_caps(struct drm_connector *connector,
+			   const struct drm_connector_dp_link_caps *link_caps);
+int drm_dp_sink_sync_caps(struct drm_connector *connector, struct drm_dp_aux *aux);
+int drm_dp_sink_set_caps(struct drm_connector *connector,
+			 u8 dpcd_caps[DP_RECEIVER_CAP_SIZE],
+			 u16 supported_link_rates[DP_MAX_SUPPORTED_RATES],
+			 u8 uhbr_supported_link_rates,
+			 bool dsc);
+void drm_dp_sink_reset_caps(struct drm_connector *connector);
+void drm_dp_set_cur_link_params(struct drm_connector *connector, int link_rate,
+				int lane_count, bool dsc_en);
+void drm_dp_set_max_link_params(struct drm_connector *connector, int link_rate,
+				int lane_count);
 
 #endif /* _DRM_DP_HELPER_H_ */

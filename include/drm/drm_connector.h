@@ -2162,6 +2162,59 @@ struct drm_connector_cec {
 };
 
 /**
+ * struct drm_connector_dp_link_caps - DRM DisplayPort link capabilities
+ */
+struct drm_connector_dp_link_caps {
+	/**
+	 * @nlanes: Maximum number of lanes number supported
+	 */
+	int nlanes;
+
+	/**
+	 * @nlink_rates: Number of link rates supported
+	 */
+	int nlink_rates;
+
+	/**
+	 * @link_rates: Array listing the supported link rates in deca-kbps
+	 */
+	int *link_rates;
+
+	/**
+	 * @dsc: Display Stream Compression supported
+	 */
+	bool dsc;
+};
+
+/**
+ * struct drm_connector_dp - DRM Connector DisplayPort-related structure
+ */
+struct drm_connector_dp {
+	/**
+	 * @source_link_caps: Source link capabilities
+	 */
+	struct drm_connector_dp_link_caps source_link_caps;
+	/**
+	 * @sink_link_caps: Sink link capabilities
+	 */
+	struct drm_connector_dp_link_caps sink_link_caps;
+	/**
+	 * @cur_link_info: Current negotiated link informations
+	 */
+	struct drm_connector_dp_link_caps cur_link_info;
+	/**
+	 * @max_link_rate: Maximum achievable link rate considering both
+	 * source and sink capabilities in deca-kbps
+	 */
+	int max_link_rate;
+	/**
+	 * @max_lane_count: Maximum achievable lane count considering both
+	 * source and sink capabilities
+	 */
+	int max_lane_count;
+};
+
+/**
  * struct drm_connector - central DRM connector control structure
  *
  * Each connector may be connected to one or more CRTCs, or may be clonable by
@@ -2593,6 +2646,11 @@ struct drm_connector {
 	 * @cec: CEC-related data.
 	 */
 	struct drm_connector_cec cec;
+
+	/**
+	 * @dp: DisplayPort-related variable and properties.
+	 */
+	struct drm_connector_dp dp;
 };
 
 #define obj_to_connector(x) container_of(x, struct drm_connector, base)
@@ -2625,6 +2683,19 @@ int drmm_connector_hdmi_init(struct drm_device *dev,
 			     struct i2c_adapter *ddc,
 			     unsigned long supported_formats,
 			     unsigned int max_bpc);
+int drm_connector_dp_init_with_ddc(struct drm_device *dev,
+				   struct drm_connector *connector,
+				   const struct drm_connector_funcs *funcs,
+				   const struct drm_connector_dp_link_caps *dp_link_caps,
+				   int connector_type,
+				   struct i2c_adapter *ddc);
+
+int drmm_connector_dp_init(struct drm_device *dev,
+			   struct drm_connector *connector,
+			   const struct drm_connector_funcs *funcs,
+			   const struct drm_connector_dp_link_caps *dp_link_caps,
+			   int connector_type,
+			   struct i2c_adapter *ddc);
 void drm_connector_attach_edid_property(struct drm_connector *connector);
 int drm_connector_register(struct drm_connector *connector);
 int drm_connector_dynamic_register(struct drm_connector *connector);

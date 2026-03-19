@@ -47,6 +47,7 @@
 #include <drm/drm_crtc.h>
 #include <drm/drm_edid.h>
 #include <drm/drm_fixed.h>
+#include <drm/drm_managed.h>
 #include <drm/drm_print.h>
 #include <drm/drm_probe_helper.h>
 
@@ -6889,7 +6890,6 @@ static const struct drm_connector_funcs intel_dp_connector_funcs = {
 	.atomic_set_property = intel_digital_connector_atomic_set_property,
 	.late_register = intel_dp_connector_register,
 	.early_unregister = intel_dp_connector_unregister,
-	.destroy = intel_connector_destroy,
 	.atomic_destroy_state = drm_atomic_helper_connector_destroy_state,
 	.atomic_duplicate_state = intel_digital_connector_duplicate_state,
 	.oob_hotplug_event = intel_dp_oob_hotplug_event,
@@ -7292,9 +7292,14 @@ intel_dp_init_connector(struct intel_digital_port *dig_port,
 		    type == DRM_MODE_CONNECTOR_eDP ? "eDP" : "DP",
 		    encoder->base.base.id, encoder->base.name);
 
-	drm_connector_init_with_ddc(dev, &connector->base, &intel_dp_connector_funcs,
-				    type, &intel_dp->aux.ddc);
+	drmm_connector_init(dev, &connector->base, &intel_dp_connector_funcs,
+			    type, &intel_dp->aux.ddc);
 	drm_connector_helper_add(&connector->base, &intel_dp_connector_helper_funcs);
+
+	if (drmm_add_action_or_reset(dev, intel_connector_destroy, connector)) {
+		drm_err(dev, "Failed to register intel_connector_destroy clean-up.\n");
+		goto fail;
+	}
 
 	if (!HAS_GMCH(display) && DISPLAY_VER(display) < 12)
 		connector->base.interlace_allowed = true;
@@ -7341,7 +7346,6 @@ intel_dp_init_connector(struct intel_digital_port *dig_port,
 
 fail:
 	intel_display_power_flush_work(display);
-	drm_connector_cleanup(&connector->base);
 
 	return false;
 }

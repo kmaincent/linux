@@ -7,6 +7,7 @@
 
 #include <linux/string_helpers.h>
 
+#include <drm/drm_managed.h>
 #include <drm/drm_print.h>
 
 #include "g4x_dp.h"
@@ -1250,12 +1251,9 @@ static void g4x_dp_suspend_complete(struct intel_encoder *encoder)
 	intel_encoder_link_check_flush_work(encoder);
 }
 
-static void intel_dp_encoder_destroy(struct drm_encoder *encoder)
+static void intel_dp_encoder_flush_work_cleanup(struct drm_device *drm, void *data)
 {
-	intel_dp_encoder_flush_work(encoder);
-
-	drm_encoder_cleanup(encoder);
-	kfree(enc_to_dig_port(to_intel_encoder(encoder)));
+	intel_dp_encoder_flush_work(data);
 }
 
 static void intel_dp_encoder_reset(struct drm_encoder *encoder)
@@ -1276,7 +1274,6 @@ static void intel_dp_encoder_reset(struct drm_encoder *encoder)
 
 static const struct drm_encoder_funcs intel_dp_enc_funcs = {
 	.reset = intel_dp_encoder_reset,
-	.destroy = intel_dp_encoder_destroy,
 };
 
 bool g4x_dp_init(struct intel_display *display,
@@ -1298,23 +1295,27 @@ bool g4x_dp_init(struct intel_display *display,
 		drm_dbg_kms(display->drm, "No VBT child device for DP-%c\n",
 			    port_name(port));
 
-	dig_port = intel_dig_port_alloc();
+	dig_port = intel_dig_port_alloc(display->drm);
 	if (!dig_port)
 		return false;
 
-	intel_connector = intel_connector_alloc();
+	intel_connector = intel_connector_alloc(display->drm);
 	if (!intel_connector)
-		goto err_connector_alloc;
+		return false;
 
 	intel_encoder = &dig_port->base;
 	encoder = &intel_encoder->base;
 
 	intel_encoder->devdata = devdata;
 
-	if (drm_encoder_init(display->drm, &intel_encoder->base,
-			     &intel_dp_enc_funcs, DRM_MODE_ENCODER_TMDS,
-			     "DP %c", port_name(port)))
-		goto err_encoder_init;
+	if (drmm_encoder_init(display->drm, &intel_encoder->base,
+			      &intel_dp_enc_funcs, DRM_MODE_ENCODER_TMDS,
+			      "DP %c", port_name(port)))
+		return false;
+
+	if (drmm_add_action_or_reset(display->drm,
+				     intel_dp_encoder_flush_work_cleanup, encoder))
+		return false;
 
 	intel_encoder_link_check_init(intel_encoder, intel_dp_link_check);
 
@@ -1411,18 +1412,10 @@ bool g4x_dp_init(struct intel_display *display,
 
 	dig_port->aux_ch = intel_dp_aux_ch(intel_encoder);
 	if (dig_port->aux_ch == AUX_CH_NONE)
-		goto err_init_connector;
+		return false;
 
 	if (!intel_dp_init_connector(dig_port, intel_connector))
-		goto err_init_connector;
+		return false;
 
 	return true;
-
-err_init_connector:
-	drm_encoder_cleanup(encoder);
-err_encoder_init:
-	kfree(intel_connector);
-err_connector_alloc:
-	kfree(dig_port);
-	return false;
 }

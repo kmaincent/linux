@@ -30,6 +30,7 @@
 #include <drm/drm_atomic_helper.h>
 #include <drm/drm_edid.h>
 #include <drm/drm_fixed.h>
+#include <drm/drm_managed.h>
 #include <drm/drm_print.h>
 #include <drm/drm_probe_helper.h>
 #include <drm/intel/step.h>
@@ -1440,13 +1441,22 @@ mst_connector_early_unregister(struct drm_connector *_connector)
 	drm_dp_mst_connector_early_unregister(&connector->base, connector->mst.port);
 }
 
+static void mst_connector_destroy(struct drm_connector *connector)
+{
+	struct intel_connector *intel_connector = to_intel_connector(connector);
+
+	intel_connector_destroy(connector->dev, intel_connector);
+	drm_connector_cleanup(connector);
+	kfree(connector);
+}
+
 static const struct drm_connector_funcs mst_connector_funcs = {
 	.fill_modes = drm_helper_probe_single_connector_modes,
 	.atomic_get_property = intel_digital_connector_atomic_get_property,
 	.atomic_set_property = intel_digital_connector_atomic_set_property,
 	.late_register = mst_connector_late_register,
 	.early_unregister = mst_connector_early_unregister,
-	.destroy = intel_connector_destroy,
+	.destroy = mst_connector_destroy,
 	.atomic_destroy_state = drm_atomic_helper_connector_destroy_state,
 	.atomic_duplicate_state = intel_digital_connector_duplicate_state,
 };
@@ -1648,16 +1658,7 @@ static const struct drm_connector_helper_funcs mst_connector_helper_funcs = {
 	.detect_ctx = mst_connector_detect_ctx,
 };
 
-static void mst_stream_encoder_destroy(struct drm_encoder *encoder)
-{
-	struct intel_dp_mst_encoder *intel_mst = enc_to_mst(to_intel_encoder(encoder));
-
-	drm_encoder_cleanup(encoder);
-	kfree(intel_mst);
-}
-
 static const struct drm_encoder_funcs mst_stream_encoder_funcs = {
-	.destroy = mst_stream_encoder_destroy,
 };
 
 static bool mst_connector_get_hw_state(struct intel_connector *connector)
@@ -1780,7 +1781,7 @@ mst_topology_add_connector(struct drm_dp_mst_topology_mgr *mgr,
 	enum pipe pipe;
 	int ret;
 
-	connector = intel_connector_alloc();
+	connector = intel_subconnector_alloc();
 	if (!connector)
 		return NULL;
 
@@ -1826,7 +1827,8 @@ err_cleanup_connector:
 	drm_connector_cleanup(&connector->base);
 err_put_port:
 	drm_dp_mst_put_port_malloc(port);
-	intel_connector_free(connector);
+	kfree(to_intel_digital_connector_state(connector->base.state));
+	kfree(connector);
 
 	return NULL;
 }
@@ -1853,17 +1855,15 @@ mst_stream_encoder_create(struct intel_digital_port *dig_port, enum pipe pipe)
 	struct intel_dp_mst_encoder *intel_mst;
 	struct intel_encoder *encoder;
 
-	intel_mst = kzalloc_obj(*intel_mst);
-
-	if (!intel_mst)
+	intel_mst = drmm_encoder_alloc(display->drm, struct intel_dp_mst_encoder,
+				       base.base, &mst_stream_encoder_funcs,
+				       DRM_MODE_ENCODER_DPMST, "DP-MST %c", pipe_name(pipe));
+	if (IS_ERR(intel_mst))
 		return NULL;
 
 	intel_mst->pipe = pipe;
 	encoder = &intel_mst->base;
 	intel_mst->primary = dig_port;
-
-	drm_encoder_init(display->drm, &encoder->base, &mst_stream_encoder_funcs,
-			 DRM_MODE_ENCODER_DPMST, "DP-MST %c", pipe_name(pipe));
 
 	encoder->type = INTEL_OUTPUT_DP_MST;
 	encoder->power_domain = primary_encoder->power_domain;

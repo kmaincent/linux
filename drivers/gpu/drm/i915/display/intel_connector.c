@@ -28,6 +28,7 @@
 
 #include <drm/drm_atomic_helper.h>
 #include <drm/drm_edid.h>
+#include <drm/drm_managed.h>
 #include <drm/drm_print.h>
 #include <drm/drm_probe_helper.h>
 
@@ -101,7 +102,21 @@ static int intel_connector_init(struct intel_connector *connector)
 	return 0;
 }
 
-struct intel_connector *intel_connector_alloc(void)
+struct intel_connector *intel_connector_alloc(struct drm_device *dev)
+{
+	struct intel_connector *connector;
+
+	connector = drmm_kzalloc(dev, sizeof(*connector), GFP_KERNEL);
+	if (!connector)
+		return NULL;
+
+	if (intel_connector_init(connector) < 0)
+		return NULL;
+
+	return connector;
+}
+
+struct intel_connector *intel_subconnector_alloc(void)
 {
 	struct intel_connector *connector;
 
@@ -127,15 +142,14 @@ struct intel_connector *intel_connector_alloc(void)
 void intel_connector_free(struct intel_connector *connector)
 {
 	kfree(to_intel_digital_connector_state(connector->base.state));
-	kfree(connector);
 }
 
 /*
  * Connector type independent destroy hook for drm_connector_funcs.
  */
-void intel_connector_destroy(struct drm_connector *connector)
+void intel_connector_destroy(struct drm_device *dev, void *data)
 {
-	struct intel_connector *intel_connector = to_intel_connector(connector);
+	struct intel_connector *intel_connector = (struct intel_connector *)data;
 
 	drm_edid_free(intel_connector->detect_edid);
 
@@ -143,12 +157,8 @@ void intel_connector_destroy(struct drm_connector *connector)
 
 	intel_panel_fini(intel_connector);
 
-	drm_connector_cleanup(connector);
-
 	if (intel_connector->mst.port)
 		drm_dp_mst_put_port_malloc(intel_connector->mst.port);
-
-	kfree(connector);
 }
 
 int intel_connector_register(struct drm_connector *_connector)

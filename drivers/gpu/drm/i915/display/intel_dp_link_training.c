@@ -25,6 +25,7 @@
 #include <linux/iopoll.h>
 
 #include <drm/display/drm_dp_helper.h>
+#include <drm/drm_dp_connector.h>
 #include <drm/drm_print.h>
 
 #include "intel_display_core.h"
@@ -1231,6 +1232,16 @@ intel_dp_128b132b_intra_hop(struct intel_dp *intel_dp,
 	return sink_status & DP_INTRA_HOP_AUX_REPLY_INDICATION ? 1 : 0;
 }
 
+static void intel_dp_report_link_train(struct intel_dp *intel_dp)
+{
+	struct intel_connector *connector = intel_dp->attached_connector;
+
+	drm_connector_dp_set_link_properties(&connector->base,
+					     intel_dp->lane_count,
+					     intel_dp->link_rate,
+					     connector->dp.dsc_decompression_enabled);
+}
+
 /**
  * intel_dp_stop_link_train - stop link training
  * @intel_dp: DP struct
@@ -1258,6 +1269,9 @@ void intel_dp_stop_link_train(struct intel_dp *intel_dp,
 
 	intel_dp_program_link_training_pattern(intel_dp, crtc_state, DP_PHY_DPRX,
 					       DP_TRAINING_PATTERN_DISABLE);
+
+	if (!intel_dp->is_mst)
+		intel_dp_report_link_train(intel_dp);
 
 	if (intel_dp_is_uhbr(crtc_state)) {
 		ret = poll_timeout_us(ret = intel_dp_128b132b_intra_hop(intel_dp, crtc_state),

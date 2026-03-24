@@ -45,6 +45,7 @@
 #include <drm/display/drm_hdmi_helper.h>
 #include <drm/drm_atomic_helper.h>
 #include <drm/drm_crtc.h>
+#include <drm/drm_dp_connector.h>
 #include <drm/drm_edid.h>
 #include <drm/drm_fixed.h>
 #include <drm/drm_managed.h>
@@ -6416,8 +6417,10 @@ intel_dp_detect(struct drm_connector *_connector,
 	drm_WARN_ON(display->drm,
 		    !drm_modeset_is_locked(&display->drm->mode_config.connection_mutex));
 
-	if (!intel_display_device_enabled(display))
+	if (!intel_display_device_enabled(display)) {
+		drm_connector_dp_reset_link_properties(_connector);
 		return connector_status_disconnected;
+	}
 
 	if (!intel_display_driver_check_access(display))
 		return connector->base.status;
@@ -6466,6 +6469,8 @@ intel_dp_detect(struct drm_connector *_connector,
 		intel_dp_mst_disconnect(intel_dp);
 
 		intel_dp_tunnel_disconnect(intel_dp);
+
+		drm_connector_dp_reset_link_properties(_connector);
 
 		goto out_unset_edid;
 	}
@@ -7241,10 +7246,12 @@ intel_dp_init_connector(struct intel_digital_port *dig_port,
 			struct intel_connector *connector)
 {
 	struct intel_display *display = to_intel_display(dig_port);
+	struct drm_connector_dp_link_caps link_caps;
 	struct intel_dp *intel_dp = &dig_port->dp;
 	struct intel_encoder *encoder = &dig_port->base;
 	struct drm_device *dev = encoder->base.dev;
 	enum port port = encoder->port;
+	u32 *rates;
 	int type;
 
 	if (drm_WARN(dev, dig_port->max_lanes < 1,
@@ -7292,8 +7299,23 @@ intel_dp_init_connector(struct intel_digital_port *dig_port,
 		    type == DRM_MODE_CONNECTOR_eDP ? "eDP" : "DP",
 		    encoder->base.base.id, encoder->base.name);
 
-	drmm_connector_init(dev, &connector->base, &intel_dp_connector_funcs,
-			    type, &intel_dp->aux.ddc);
+	intel_dp_set_source_rates(intel_dp);
+	link_caps.nlanes = DRM_DP_1LANE | DRM_DP_2LANE | DRM_DP_4LANE;
+	link_caps.nlink_rates = intel_dp->num_source_rates;
+	rates = kzalloc_objs(*rates, intel_dp->num_source_rates);
+	if (!rates)
+		goto fail;
+
+	for (int i = 0; i < intel_dp->num_source_rates; i++)
+		rates[i] = intel_dp->source_rates[i];
+
+	link_caps.link_rates = rates;
+	link_caps.dsc = intel_dp_has_dsc(connector);
+
+	drmm_connector_dp_init(dev, &connector->base, &intel_dp_connector_funcs,
+			       &link_caps, type, &intel_dp->aux.ddc);
+	kfree(rates);
+
 	drm_connector_helper_add(&connector->base, &intel_dp_connector_helper_funcs);
 
 	if (drmm_add_action_or_reset(dev, intel_connector_destroy, connector)) {
@@ -7319,7 +7341,6 @@ intel_dp_init_connector(struct intel_digital_port *dig_port,
 	if (!intel_edp_init_connector(intel_dp, connector))
 		goto fail;
 
-	intel_dp_set_source_rates(intel_dp);
 	intel_dp_set_common_rates(intel_dp);
 	intel_dp_reset_link_params(intel_dp);
 

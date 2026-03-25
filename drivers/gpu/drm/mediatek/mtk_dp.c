@@ -1789,6 +1789,8 @@ static int mtk_dp_parse_capabilities(struct mtk_dp *mtk_dp)
 		}
 	}
 
+	drm_dp_sink_set_link_caps(mtk_dp->conn, &mtk_dp->aux);
+
 	return 0;
 }
 
@@ -1810,6 +1812,17 @@ static void mtk_dp_train_change_mode(struct mtk_dp *mtk_dp)
 {
 	phy_reset(mtk_dp->phy);
 	mtk_dp_reset_swing_pre_emphasis(mtk_dp);
+}
+
+static void mtk_dp_report_link_train(struct mtk_dp *mtk_dp)
+{
+	u32 rate, nlanes;
+
+	rate = drm_dp_bw_code_to_link_rate(mtk_dp->train_info.link_rate);
+	nlanes = mtk_dp->train_info.lane_count;
+
+	drm_dp_set_cur_link_params(mtk_dp->conn, rate, nlanes, false);
+	drm_dp_set_max_link_params(mtk_dp->conn, rate, nlanes);
 }
 
 static int mtk_dp_training(struct mtk_dp *mtk_dp)
@@ -1892,6 +1905,7 @@ static int mtk_dp_training(struct mtk_dp *mtk_dp)
 	mtk_dp_training_set_scramble(mtk_dp, true);
 	mtk_dp_set_enhanced_frame_mode(mtk_dp);
 
+	mtk_dp_report_link_train(mtk_dp);
 	return 0;
 }
 
@@ -2004,6 +2018,7 @@ static irqreturn_t mtk_dp_hpd_event_thread(int hpd, void *dev)
 			mtk_dp->need_debounce = false;
 			mod_timer(&mtk_dp->debounce_timer,
 				  jiffies + msecs_to_jiffies(100) - 1);
+			drm_dp_sink_reset_link_caps(mtk_dp->conn);
 		} else {
 			mtk_dp_aux_panel_poweron(mtk_dp, true);
 
@@ -2742,6 +2757,12 @@ static int mtk_dp_edp_link_panel(struct drm_dp_aux *mtk_aux)
 
 static int mtk_dp_probe(struct platform_device *pdev)
 {
+	static const u32 dp_rates[] = {162000, 270000, 540000, 810000};
+	static const struct drm_connector_dp_link_caps dp_link_caps = {
+		.nlanes = 4,
+		.nlink_rates = ARRAY_SIZE(dp_rates),
+		.link_rates = dp_rates,
+	};
 	struct mtk_dp *mtk_dp;
 	struct device *dev = &pdev->dev;
 	int ret;
@@ -2809,6 +2830,8 @@ static int mtk_dp_probe(struct platform_device *pdev)
 
 	mtk_dp->bridge.of_node = dev->of_node;
 	mtk_dp->bridge.type = mtk_dp->data->bridge_type;
+	mtk_dp->bridge.dp_link_caps = &dp_link_caps;
+	mtk_dp->bridge.ops = DRM_BRIDGE_OP_DP;
 
 	if (mtk_dp->bridge.type == DRM_MODE_CONNECTOR_eDP) {
 		/*

@@ -1812,6 +1812,58 @@ static void mtk_dp_train_change_mode(struct mtk_dp *mtk_dp)
 	mtk_dp_reset_swing_pre_emphasis(mtk_dp);
 }
 
+static void _mtk_dp_report_link_train(struct mtk_dp *mtk_dp)
+{
+	u32 rate, nlanes;
+	bool dsc = false;
+
+	rate = drm_dp_bw_code_to_link_rate(mtk_dp->train_info.link_rate);
+	nlanes = mtk_dp->train_info.lane_count;
+
+	drm_dp_set_cur_link_params(mtk_dp->conn, rate, nlanes, dsc);
+}
+
+static void mtk_dp_report_link_train(struct mtk_dp *mtk_dp)
+{
+	struct drm_modeset_lock *lock;
+	int ret;
+
+	if (!mtk_dp->conn)
+		return;
+
+	lock = &mtk_dp->conn->dev->mode_config.connection_mutex;
+	ret = drm_modeset_lock_single_interruptible(lock);
+	if (ret)
+		return;
+
+	_mtk_dp_report_link_train(mtk_dp);
+
+	drm_modeset_unlock(lock);
+}
+
+static void _mtk_dp_reset_link_train(struct mtk_dp *mtk_dp)
+{
+	drm_dp_sink_reset_caps(mtk_dp->conn);
+}
+
+static void mtk_dp_reset_link_train(struct mtk_dp *mtk_dp)
+{
+	struct drm_modeset_lock *lock;
+	int ret;
+
+	if (!mtk_dp->conn)
+		return;
+
+	lock = &mtk_dp->conn->dev->mode_config.connection_mutex;
+	ret = drm_modeset_lock_single_interruptible(lock);
+	if (ret)
+		return;
+
+	_mtk_dp_reset_link_train(mtk_dp);
+
+	drm_modeset_unlock(lock);
+}
+
 static int mtk_dp_training(struct mtk_dp *mtk_dp)
 {
 	int ret;
@@ -1991,6 +2043,8 @@ static irqreturn_t mtk_dp_hpd_event_thread(int hpd, void *dev)
 			drm_helper_hpd_irq_event(mtk_dp->bridge.dev);
 
 		if (!mtk_dp->train_info.cable_plugged_in) {
+			mtk_dp_reset_link_train(mtk_dp);
+
 			mtk_dp_disable_sdp_aui(mtk_dp);
 			memset(&mtk_dp->info.audio_cur_cfg, 0,
 			       sizeof(mtk_dp->info.audio_cur_cfg));
@@ -2015,6 +2069,8 @@ static irqreturn_t mtk_dp_hpd_event_thread(int hpd, void *dev)
 			ret = mtk_dp_training(mtk_dp);
 			if (ret)
 				drm_err(mtk_dp->drm_dev, "Training failed, %d\n", ret);
+
+			mtk_dp_report_link_train(mtk_dp);
 
 			mtk_dp->enabled = true;
 		}
@@ -2387,6 +2443,8 @@ static void mtk_dp_bridge_atomic_enable(struct drm_bridge *bridge,
 		return;
 	}
 
+	drm_dp_sink_sync_caps(mtk_dp->conn, &mtk_dp->aux);
+
 	if (mtk_dp->data->bridge_type == DRM_MODE_CONNECTOR_eDP) {
 		mtk_dp_aux_panel_poweron(mtk_dp, true);
 
@@ -2396,6 +2454,8 @@ static void mtk_dp_bridge_atomic_enable(struct drm_bridge *bridge,
 			drm_err(mtk_dp->drm_dev, "Training failed, %d\n", ret);
 			goto power_off_aux;
 		}
+
+		_mtk_dp_report_link_train(mtk_dp);
 	}
 
 	ret = mtk_dp_video_config(mtk_dp);
@@ -2417,6 +2477,8 @@ static void mtk_dp_bridge_atomic_enable(struct drm_bridge *bridge,
 
 	if (mtk_dp->data->bridge_type == DRM_MODE_CONNECTOR_eDP)
 		mtk_dp->enabled = true;
+	else if (mtk_dp->enabled)
+		_mtk_dp_report_link_train(mtk_dp);
 
 	mtk_dp_update_plugged_status(mtk_dp);
 
@@ -2435,6 +2497,9 @@ static void mtk_dp_bridge_atomic_disable(struct drm_bridge *bridge,
 	if (mtk_dp->data->bridge_type == DRM_MODE_CONNECTOR_eDP) {
 		mtk_dp->enabled = false;
 		mtk_dp_aux_panel_poweron(mtk_dp, false);
+		_mtk_dp_reset_link_train(mtk_dp);
+	} else if (!mtk_dp->enabled) {
+		_mtk_dp_report_link_train(mtk_dp);
 	}
 
 	mtk_dp_update_plugged_status(mtk_dp);
@@ -2742,6 +2807,12 @@ static int mtk_dp_edp_link_panel(struct drm_dp_aux *mtk_aux)
 
 static int mtk_dp_probe(struct platform_device *pdev)
 {
+	static u32 dp_rates[] = {162000, 270000, 540000, 810000};
+	static const struct drm_connector_dp_link_caps dp_link_caps = {
+		.nlanes = 4,
+		.nlink_rates = ARRAY_SIZE(dp_rates),
+		.link_rates = dp_rates,
+	};
 	struct mtk_dp *mtk_dp;
 	struct device *dev = &pdev->dev;
 	int ret;
@@ -2809,6 +2880,8 @@ static int mtk_dp_probe(struct platform_device *pdev)
 
 	mtk_dp->bridge.of_node = dev->of_node;
 	mtk_dp->bridge.type = mtk_dp->data->bridge_type;
+	mtk_dp->bridge.dp_link_caps = &dp_link_caps;
+	mtk_dp->bridge.ops = DRM_BRIDGE_OP_DP;
 
 	if (mtk_dp->bridge.type == DRM_MODE_CONNECTOR_eDP) {
 		/*
@@ -2849,7 +2922,7 @@ static int mtk_dp_probe(struct platform_device *pdev)
 			}
 		}
 	} else {
-		mtk_dp->bridge.ops = DRM_BRIDGE_OP_DETECT |
+		mtk_dp->bridge.ops |= DRM_BRIDGE_OP_DETECT |
 				     DRM_BRIDGE_OP_EDID | DRM_BRIDGE_OP_HPD;
 		ret = devm_drm_bridge_add(dev, &mtk_dp->bridge);
 		if (ret)

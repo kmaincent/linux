@@ -30,6 +30,6 @@ struct vkms_connector *vkms_connector_init(struct vkms_device *vkmsdev);
  * vkms_trigger_connector_hotplug() - Update the device's connectors status
  * @vkmsdev: VKMS device to update
  */
-void vkms_trigger_connector_hotplug(struct vkms_device *vkmsdev);
+void vkms_trigger_connector_hotplug(struct vkms_config_connector *connector_cfg);
 
 #endif /* _VKMS_CONNECTOR_H_ */

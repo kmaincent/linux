@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-2.0+
 
 #include <drm/drm_atomic_helper.h>
+#include <drm/drm_dp_connector.h>
 #include <drm/drm_edid.h>
 #include <drm/drm_managed.h>
 #include <drm/drm_probe_helper.h>
@@ -74,12 +75,25 @@ struct vkms_connector *vkms_connector_init(struct vkms_device *vkmsdev)
 	struct vkms_connector *connector;
 	int ret;
 
+	static const u32 dp_rates[] = {1620000, 2160000, 2700000, 3240000};
+
+	static const struct drm_connector_dp_link_train_caps dp_link_train_caps = {
+		.nlanes = DRM_DP_1LANE | DRM_DP_2LANE,
+		.nrates = ARRAY_SIZE(dp_rates),
+		.rates = dp_rates,
+		.dsc = true,
+		.v_swings = DRM_DP_VOLTAGE_SWING_LEVEL_0 |
+			    DRM_DP_VOLTAGE_SWING_LEVEL_1 |
+			    DRM_DP_VOLTAGE_SWING_LEVEL_2,
+	};
+
 	connector = drmm_kzalloc(dev, sizeof(*connector), GFP_KERNEL);
 	if (!connector)
 		return ERR_PTR(-ENOMEM);
 
-	ret = drmm_connector_init(dev, &connector->base, &vkms_connector_funcs,
-				  DRM_MODE_CONNECTOR_VIRTUAL, NULL);
+	ret = drmm_connector_dp_init(dev, &connector->base, &vkms_connector_funcs,
+				     &dp_link_train_caps,
+				     DRM_MODE_CONNECTOR_DisplayPort, NULL);
 	if (ret)
 		return ERR_PTR(ret);
 
@@ -88,9 +102,21 @@ struct vkms_connector *vkms_connector_init(struct vkms_device *vkmsdev)
 	return connector;
 }
 
-void vkms_trigger_connector_hotplug(struct vkms_device *vkmsdev)
+void vkms_trigger_connector_hotplug(struct vkms_config_connector *connector_cfg)
 {
-	struct drm_device *dev = &vkmsdev->drm;
+	struct drm_connector *connector = &connector_cfg->connector->base;
+	struct drm_device *dev = &connector_cfg->config->dev->drm;
+	static const struct drm_connector_dp_link_train dp_link_train = {
+		.nlanes = DRM_DP_2LANE,
+		.rate = 270000,
+		.dsc_en = true,
+		.v_swing[0] = DRM_DP_VOLTAGE_SWING_LEVEL_2,
+	};
+
+	if (vkms_config_connector_get_status(connector_cfg) == connector_status_connected)
+		drm_connector_dp_set_link_train_properties(connector, &dp_link_train);
+	else
+		drm_connector_dp_reset_link_train_properties(connector);
 
 	drm_kms_helper_hotplug_event(dev);
 }

@@ -33,6 +33,7 @@
 #include <drm/drm_atomic_helper.h>
 #include <drm/drm_crtc.h>
 #include <drm/drm_edid.h>
+#include <drm/drm_managed.h>
 #include <drm/drm_print.h>
 #include <drm/drm_probe_helper.h>
 
@@ -1881,7 +1882,6 @@ static const struct drm_connector_helper_funcs intel_tv_connector_helper_funcs =
 };
 
 static const struct drm_encoder_funcs intel_tv_enc_funcs = {
-	.destroy = intel_encoder_destroy,
 };
 
 static void intel_tv_add_properties(struct drm_connector *connector)
@@ -1966,10 +1966,10 @@ intel_tv_init(struct intel_display *display)
 	    (tv_dac_off & TVDAC_STATE_CHG_EN) != 0)
 		return;
 
-	intel_tv = kzalloc_obj(*intel_tv);
-	if (!intel_tv) {
+	intel_tv = drmm_encoder_alloc(display->drm, struct intel_tv, base.base,
+				      &intel_tv_enc_funcs, DRM_MODE_ENCODER_TVDAC, "TV");
+	if (IS_ERR(intel_tv))
 		return;
-	}
 
 	intel_connector = intel_connector_alloc();
 	if (!intel_connector) {
@@ -1996,9 +1996,6 @@ intel_tv_init(struct intel_display *display)
 	drm_connector_init(display->drm, connector, &intel_tv_connector_funcs,
 			   DRM_MODE_CONNECTOR_SVIDEO);
 
-	drm_encoder_init(display->drm, &intel_encoder->base,
-			 &intel_tv_enc_funcs,
-			 DRM_MODE_ENCODER_TVDAC, "TV");
 
 	intel_encoder->compute_config = intel_tv_compute_config;
 	intel_encoder->get_config = intel_tv_get_config;

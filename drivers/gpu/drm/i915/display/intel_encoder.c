@@ -5,6 +5,8 @@
 
 #include <linux/workqueue.h>
 
+#include <drm/drm_managed.h>
+
 #include "intel_display_core.h"
 #include "intel_display_types.h"
 #include "intel_encoder.h"
@@ -104,11 +106,11 @@ void intel_encoder_shutdown_all(struct intel_display *display)
 			encoder->shutdown_complete(encoder);
 }
 
-struct intel_digital_port *intel_dig_port_alloc(void)
+struct intel_digital_port *intel_dig_port_alloc(struct drm_device *drm)
 {
 	struct intel_digital_port *dig_port;
 
-	dig_port = kzalloc_obj(*dig_port);
+	dig_port = drmm_kzalloc(drm, sizeof(*dig_port), GFP_KERNEL);
 	if (!dig_port)
 		return NULL;
 

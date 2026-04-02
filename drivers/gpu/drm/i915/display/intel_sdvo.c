@@ -36,6 +36,7 @@
 #include <drm/drm_crtc.h>
 #include <drm/drm_edid.h>
 #include <drm/drm_eld.h>
+#include <drm/drm_managed.h>
 #include <drm/drm_print.h>
 #include <drm/drm_probe_helper.h>
 
@@ -2542,24 +2543,19 @@ static const struct drm_connector_helper_funcs intel_sdvo_connector_helper_funcs
 	.atomic_check = intel_sdvo_atomic_check,
 };
 
-static void intel_sdvo_encoder_destroy(struct drm_encoder *_encoder)
+static void intel_sdvo_unselect_i2c_bus(struct intel_sdvo *sdvo);
+
+static void intel_sdvo_cleanup(struct drm_device *drm, void *data)
 {
-	struct intel_encoder *encoder = to_intel_encoder(_encoder);
-	struct intel_sdvo *sdvo = to_sdvo(encoder);
+	struct intel_sdvo *intel_sdvo = data;
 	int i;
 
-	for (i = 0; i < ARRAY_SIZE(sdvo->ddc); i++) {
-		if (sdvo->ddc[i].ddc_bus)
-			i2c_del_adapter(&sdvo->ddc[i].ddc);
+	for (i = 0; i < ARRAY_SIZE(intel_sdvo->ddc); i++) {
+		if (intel_sdvo->ddc[i].ddc_bus)
+			i2c_del_adapter(&intel_sdvo->ddc[i].ddc);
 	}
-
-	drm_encoder_cleanup(&encoder->base);
-	kfree(sdvo);
-};
-
-static const struct drm_encoder_funcs intel_sdvo_enc_funcs = {
-	.destroy = intel_sdvo_encoder_destroy,
-};
+	intel_sdvo_unselect_i2c_bus(intel_sdvo);
+}
 
 static int
 intel_sdvo_guess_ddc_bus(struct intel_sdvo *sdvo,
@@ -3381,8 +3377,9 @@ bool intel_sdvo_init(struct intel_display *display,
 	if (!assert_sdvo_port_valid(display, port))
 		return false;
 
-	intel_sdvo = kzalloc_obj(*intel_sdvo);
-	if (!intel_sdvo)
+	intel_sdvo = drmm_encoder_alloc(display->drm, struct intel_sdvo, base.base,
+					NULL, 0, "SDVO %c", port_name(port));
+	if (IS_ERR(intel_sdvo))
 		return false;
 
 	/* encoder type will be decided later */
@@ -3391,14 +3388,13 @@ bool intel_sdvo_init(struct intel_display *display,
 	intel_encoder->power_domain = POWER_DOMAIN_PORT_OTHER;
 	intel_encoder->port = port;
 
-	drm_encoder_init(display->drm, &intel_encoder->base,
-			 &intel_sdvo_enc_funcs, 0,
-			 "SDVO %c", port_name(port));
-
 	intel_sdvo->sdvo_reg = sdvo_reg;
 	intel_sdvo->target_addr = intel_sdvo_get_target_addr(intel_sdvo) >> 1;
 
 	intel_sdvo_select_i2c_bus(intel_sdvo);
+
+	if (drmm_add_action_or_reset(display->drm, intel_sdvo_cleanup, intel_sdvo))
+		return false;
 
 	/* Read the regs to test if we can talk to the device */
 	for (i = 0; i < 0x40; i++) {
@@ -3408,7 +3404,7 @@ bool intel_sdvo_init(struct intel_display *display,
 			drm_dbg_kms(display->drm,
 				    "No SDVO device found on %s\n",
 				    SDVO_NAME(intel_sdvo));
-			goto err;
+			return false;
 		}
 	}
 
@@ -3428,7 +3424,7 @@ bool intel_sdvo_init(struct intel_display *display,
 
 	/* In default case sdvo lvds is false */
 	if (!intel_sdvo_get_capabilities(intel_sdvo, &intel_sdvo->caps))
-		goto err;
+		return false;
 
 	intel_sdvo->colorimetry_cap =
 		intel_sdvo_get_colorimetry_cap(intel_sdvo);
@@ -3439,7 +3435,7 @@ bool intel_sdvo_init(struct intel_display *display,
 		ret = intel_sdvo_init_ddc_proxy(&intel_sdvo->ddc[i],
 						intel_sdvo, i + 1);
 		if (ret)
-			goto err;
+			return false;
 	}
 
 	if (!intel_sdvo_output_setup(intel_sdvo)) {
@@ -3502,9 +3498,6 @@ bool intel_sdvo_init(struct intel_display *display,
 
 err_output:
 	intel_sdvo_output_cleanup(intel_sdvo);
-err:
-	intel_sdvo_unselect_i2c_bus(intel_sdvo);
-	intel_sdvo_encoder_destroy(&intel_encoder->base);
 
 	return false;
 }

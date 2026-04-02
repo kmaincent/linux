@@ -31,6 +31,7 @@
 #include <drm/drm_atomic_helper.h>
 #include <drm/drm_crtc.h>
 #include <drm/drm_edid.h>
+#include <drm/drm_managed.h>
 #include <drm/drm_print.h>
 #include <drm/drm_probe_helper.h>
 #include <video/vga.h>
@@ -1004,7 +1005,6 @@ static const struct drm_connector_helper_funcs intel_crt_connector_helper_funcs 
 
 static const struct drm_encoder_funcs intel_crt_enc_funcs = {
 	.reset = intel_crt_reset,
-	.destroy = intel_encoder_destroy,
 };
 
 void intel_crt_init(struct intel_display *display)
@@ -1041,8 +1041,9 @@ void intel_crt_init(struct intel_display *display)
 		intel_de_write(display, adpa_reg, adpa);
 	}
 
-	crt = kzalloc_obj(struct intel_crt);
-	if (!crt)
+	crt = drmm_encoder_alloc(display->drm, struct intel_crt, base.base,
+				 &intel_crt_enc_funcs, DRM_MODE_ENCODER_DAC, "CRT");
+	if (IS_ERR(crt))
 		return;
 
 	connector = intel_connector_alloc();
@@ -1058,8 +1059,6 @@ void intel_crt_init(struct intel_display *display)
 				    DRM_MODE_CONNECTOR_VGA,
 				    intel_gmbus_get_adapter(display, ddc_pin));
 
-	drm_encoder_init(display->drm, &crt->base.base, &intel_crt_enc_funcs,
-			 DRM_MODE_ENCODER_DAC, "CRT");
 
 	intel_connector_attach_encoder(connector, &crt->base);
 

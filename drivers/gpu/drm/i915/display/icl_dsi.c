@@ -30,6 +30,7 @@
 #include <drm/display/drm_dsc_helper.h>
 #include <drm/drm_atomic_helper.h>
 #include <drm/drm_fixed.h>
+#include <drm/drm_managed.h>
 #include <drm/drm_mipi_dsi.h>
 #include <drm/drm_print.h>
 #include <drm/drm_probe_helper.h>
@@ -1775,13 +1776,7 @@ static bool gen11_dsi_initial_fastset_check(struct intel_encoder *encoder,
 	return true;
 }
 
-static void gen11_dsi_encoder_destroy(struct drm_encoder *encoder)
-{
-	intel_encoder_destroy(encoder);
-}
-
 static const struct drm_encoder_funcs gen11_dsi_encoder_funcs = {
-	.destroy = gen11_dsi_encoder_destroy,
 };
 
 static const struct drm_connector_funcs gen11_dsi_connector_funcs = {
@@ -1934,8 +1929,10 @@ void icl_dsi_init(struct intel_display *display,
 	if (port == PORT_NONE)
 		return;
 
-	intel_dsi = kzalloc_obj(*intel_dsi);
-	if (!intel_dsi)
+	intel_dsi = drmm_encoder_alloc(display->drm, struct intel_dsi, base.base,
+				       &gen11_dsi_encoder_funcs,
+				       DRM_MODE_ENCODER_DSI, "DSI %c", port_name(port));
+	if (IS_ERR(intel_dsi))
 		return;
 
 	intel_connector = intel_connector_alloc();
@@ -1949,11 +1946,6 @@ void icl_dsi_init(struct intel_display *display,
 	connector = &intel_connector->base;
 
 	encoder->devdata = devdata;
-
-	/* register DSI encoder with DRM subsystem */
-	drm_encoder_init(display->drm, &encoder->base,
-			 &gen11_dsi_encoder_funcs,
-			 DRM_MODE_ENCODER_DSI, "DSI %c", port_name(port));
 
 	encoder->pre_pll_enable = gen11_dsi_pre_pll_enable;
 	encoder->pre_enable = gen11_dsi_pre_enable;
@@ -2037,7 +2029,5 @@ void icl_dsi_init(struct intel_display *display,
 
 err:
 	drm_connector_cleanup(connector);
-	drm_encoder_cleanup(&encoder->base);
-	kfree(intel_dsi);
 	kfree(intel_connector);
 }

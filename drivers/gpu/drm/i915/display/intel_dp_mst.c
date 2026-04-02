@@ -30,6 +30,7 @@
 #include <drm/drm_atomic_helper.h>
 #include <drm/drm_edid.h>
 #include <drm/drm_fixed.h>
+#include <drm/drm_managed.h>
 #include <drm/drm_print.h>
 #include <drm/drm_probe_helper.h>
 #include <drm/intel/step.h>
@@ -1648,16 +1649,7 @@ static const struct drm_connector_helper_funcs mst_connector_helper_funcs = {
 	.detect_ctx = mst_connector_detect_ctx,
 };
 
-static void mst_stream_encoder_destroy(struct drm_encoder *encoder)
-{
-	struct intel_dp_mst_encoder *intel_mst = enc_to_mst(to_intel_encoder(encoder));
-
-	drm_encoder_cleanup(encoder);
-	kfree(intel_mst);
-}
-
 static const struct drm_encoder_funcs mst_stream_encoder_funcs = {
-	.destroy = mst_stream_encoder_destroy,
 };
 
 static bool mst_connector_get_hw_state(struct intel_connector *connector)
@@ -1853,17 +1845,15 @@ mst_stream_encoder_create(struct intel_digital_port *dig_port, enum pipe pipe)
 	struct intel_dp_mst_encoder *intel_mst;
 	struct intel_encoder *encoder;
 
-	intel_mst = kzalloc_obj(*intel_mst);
-
-	if (!intel_mst)
+	intel_mst = drmm_encoder_alloc(display->drm, struct intel_dp_mst_encoder,
+				       base.base, &mst_stream_encoder_funcs,
+				       DRM_MODE_ENCODER_DPMST, "DP-MST %c", pipe_name(pipe));
+	if (IS_ERR(intel_mst))
 		return NULL;
 
 	intel_mst->pipe = pipe;
 	encoder = &intel_mst->base;
 	intel_mst->primary = dig_port;
-
-	drm_encoder_init(display->drm, &encoder->base, &mst_stream_encoder_funcs,
-			 DRM_MODE_ENCODER_DPMST, "DP-MST %c", pipe_name(pipe));
 
 	encoder->type = INTEL_OUTPUT_DP_MST;
 	encoder->power_domain = primary_encoder->power_domain;

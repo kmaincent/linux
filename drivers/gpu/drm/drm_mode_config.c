@@ -567,11 +567,13 @@ void drm_mode_config_cleanup(struct drm_device *dev)
 
 	list_for_each_entry_safe(plane, plt, &dev->mode_config.plane_list,
 				 head) {
-		plane->funcs->destroy(plane);
+		if (plane->funcs->destroy)
+			plane->funcs->destroy(plane);
 	}
 
 	list_for_each_entry_safe(crtc, ct, &dev->mode_config.crtc_list, head) {
-		crtc->funcs->destroy(crtc);
+		if (crtc->funcs->destroy)
+			crtc->funcs->destroy(crtc);
 	}
 
 	list_for_each_entry_safe(blob, bt, &dev->mode_config.property_blob_list,

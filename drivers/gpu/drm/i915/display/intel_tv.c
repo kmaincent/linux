@@ -1841,7 +1841,6 @@ intel_tv_get_modes(struct drm_connector *connector)
 static const struct drm_connector_funcs intel_tv_connector_funcs = {
 	.late_register = intel_connector_register,
 	.early_unregister = intel_connector_unregister,
-	.destroy = intel_connector_destroy,
 	.fill_modes = drm_helper_probe_single_connector_modes,
 	.atomic_destroy_state = drm_atomic_helper_connector_destroy_state,
 	.atomic_duplicate_state = intel_tv_connector_duplicate_state,
@@ -1971,11 +1970,9 @@ intel_tv_init(struct intel_display *display)
 	if (IS_ERR(intel_tv))
 		return;
 
-	intel_connector = intel_connector_alloc();
-	if (!intel_connector) {
-		kfree(intel_tv);
+	intel_connector = intel_connector_alloc(display->drm);
+	if (!intel_connector)
 		return;
-	}
 
 	intel_encoder = &intel_tv->base;
 	connector = &intel_connector->base;
@@ -1993,9 +1990,13 @@ intel_tv_init(struct intel_display *display)
 	intel_connector->polled = DRM_CONNECTOR_POLL_CONNECT;
 	intel_connector->base.polled = intel_connector->polled;
 
-	drm_connector_init(display->drm, connector, &intel_tv_connector_funcs,
-			   DRM_MODE_CONNECTOR_SVIDEO);
+	drmm_connector_init(display->drm, connector, &intel_tv_connector_funcs,
+			    DRM_MODE_CONNECTOR_SVIDEO, NULL);
 
+	if (drmm_add_action_or_reset(display->drm, intel_connector_destroy, intel_connector)) {
+		drm_err(display->drm, "Failed to register intel_connector_destroy clean-up.\n");
+		return;
+	}
 
 	intel_encoder->compute_config = intel_tv_compute_config;
 	intel_encoder->get_config = intel_tv_get_config;

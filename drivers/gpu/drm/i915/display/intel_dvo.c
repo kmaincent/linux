@@ -362,7 +362,6 @@ static const struct drm_connector_funcs intel_dvo_connector_funcs = {
 	.detect = intel_dvo_detect,
 	.late_register = intel_connector_register,
 	.early_unregister = intel_connector_unregister,
-	.destroy = intel_connector_destroy,
 	.fill_modes = drm_helper_probe_single_connector_modes,
 	.atomic_destroy_state = drm_atomic_helper_connector_destroy_state,
 	.atomic_duplicate_state = drm_atomic_helper_connector_duplicate_state,
@@ -496,11 +495,9 @@ void intel_dvo_init(struct intel_display *display)
 	if (!intel_dvo)
 		return;
 
-	connector = intel_connector_alloc();
-	if (!connector) {
-		kfree(intel_dvo);
+	connector = intel_connector_alloc(display->drm);
+	if (!connector)
 		return;
-	}
 
 	intel_dvo->attached_connector = connector;
 
@@ -547,13 +544,19 @@ void intel_dvo_init(struct intel_display *display)
 			DRM_CONNECTOR_POLL_DISCONNECT;
 	connector->base.polled = connector->polled;
 
-	drm_connector_init_with_ddc(display->drm, &connector->base,
-				    &intel_dvo_connector_funcs,
-				    intel_dvo_connector_type(&intel_dvo->dev),
-				    intel_gmbus_get_adapter(display, GMBUS_PIN_DPC));
+	drmm_connector_init(display->drm, &connector->base,
+			    &intel_dvo_connector_funcs,
+			    intel_dvo_connector_type(&intel_dvo->dev),
+			    intel_gmbus_get_adapter(display, GMBUS_PIN_DPC));
 
 	drm_connector_helper_add(&connector->base,
 				 &intel_dvo_connector_helper_funcs);
+
+	if (drmm_add_action_or_reset(display->drm, intel_connector_destroy, connector)) {
+		drm_err(display->drm, "Failed to register intel_connector_destroy clean-up.\n");
+		return;
+	}
+
 	connector->base.display_info.subpixel_order = SubPixelHorizontalRGB;
 
 	intel_connector_attach_encoder(connector, encoder);

@@ -690,7 +690,7 @@ bool g4x_hdmi_init(struct intel_display *display,
 	if (!dig_port)
 		return false;
 
-	intel_connector = intel_connector_alloc();
+	intel_connector = intel_connector_alloc(display->drm);
 	if (!intel_connector)
 		return false;
 
@@ -701,7 +701,7 @@ bool g4x_hdmi_init(struct intel_display *display,
 	if (drmm_encoder_init(display->drm, &intel_encoder->base,
 			      &intel_hdmi_enc_funcs, DRM_MODE_ENCODER_TMDS,
 			      "HDMI %c", port_name(port)))
-		goto err_encoder_init;
+		return false;
 
 	intel_encoder->hotplug = intel_hdmi_hotplug;
 	intel_encoder->compute_config = g4x_hdmi_compute_config;
@@ -763,11 +763,7 @@ bool g4x_hdmi_init(struct intel_display *display,
 	intel_infoframe_init(dig_port);
 
 	if (!intel_hdmi_init_connector(dig_port, intel_connector))
-		goto err_encoder_init;
+		return false;
 
 	return true;
-err_encoder_init:
-	kfree(intel_connector);
-
-	return false;
 }

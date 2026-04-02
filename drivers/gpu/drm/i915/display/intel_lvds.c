@@ -512,7 +512,6 @@ static const struct drm_connector_funcs intel_lvds_connector_funcs = {
 	.atomic_set_property = intel_digital_connector_atomic_set_property,
 	.late_register = intel_connector_register,
 	.early_unregister = intel_connector_unregister,
-	.destroy = intel_connector_destroy,
 	.atomic_destroy_state = drm_atomic_helper_connector_destroy_state,
 	.atomic_duplicate_state = intel_digital_connector_duplicate_state,
 };
@@ -891,18 +890,23 @@ void intel_lvds_init(struct intel_display *display)
 	if (IS_ERR(lvds_encoder))
 		return;
 
-	connector = intel_connector_alloc();
+	encoder = &lvds_encoder->base;
+
+	connector = intel_connector_alloc(display->drm);
 	if (!connector)
 		return;
 
 	lvds_encoder->attached_connector = connector;
-	encoder = &lvds_encoder->base;
 
-	drm_connector_init_with_ddc(display->drm, &connector->base,
-				    &intel_lvds_connector_funcs,
-				    DRM_MODE_CONNECTOR_LVDS,
-				    intel_gmbus_get_adapter(display, ddc_pin));
+	drmm_connector_init(display->drm, &connector->base,
+			    &intel_lvds_connector_funcs,
+			    DRM_MODE_CONNECTOR_LVDS,
+			    intel_gmbus_get_adapter(display, ddc_pin));
 
+	if (drmm_add_action_or_reset(display->drm, intel_connector_destroy, connector)) {
+		drm_err(display->drm, "Failed to register intel_connector_destroy clean-up.\n");
+		return;
+	}
 
 	encoder->enable = intel_enable_lvds;
 	encoder->pre_enable = intel_pre_enable_lvds;

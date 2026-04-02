@@ -4694,7 +4694,7 @@ static int intel_ddi_init_dp_connector(struct intel_digital_port *dig_port)
 	struct intel_connector *connector;
 	enum port port = dig_port->base.port;
 
-	connector = intel_connector_alloc();
+	connector = intel_connector_alloc(display->drm);
 	if (!connector)
 		return -ENOMEM;
 
@@ -4709,10 +4709,8 @@ static int intel_ddi_init_dp_connector(struct intel_digital_port *dig_port)
 	dig_port->dp.voltage_max = intel_ddi_dp_voltage_max;
 	dig_port->dp.preemph_max = intel_ddi_dp_preemph_max;
 
-	if (!intel_dp_init_connector(dig_port, connector)) {
-		kfree(connector);
+	if (!intel_dp_init_connector(dig_port, connector))
 		return -EINVAL;
-	}
 
 	if (dig_port->base.type == INTEL_OUTPUT_EDP) {
 		struct drm_privacy_screen *privacy_screen;
@@ -4892,12 +4890,13 @@ static bool bdw_digital_port_connected(struct intel_encoder *encoder)
 	return intel_de_read(display, GEN8_DE_PORT_ISR) & bit;
 }
 
-static int intel_ddi_init_hdmi_connector(struct intel_digital_port *dig_port)
+static int intel_ddi_init_hdmi_connector(struct drm_device *dev,
+					 struct intel_digital_port *dig_port)
 {
 	struct intel_connector *connector;
 	enum port port = dig_port->base.port;
 
-	connector = intel_connector_alloc();
+	connector = intel_connector_alloc(dev);
 	if (!connector)
 		return -ENOMEM;
 
@@ -4910,7 +4909,6 @@ static int intel_ddi_init_hdmi_connector(struct intel_digital_port *dig_port)
 		 * don't fail the entire DDI init.
 		 */
 		dig_port->hdmi.hdmi_reg = INVALID_MMIO_REG;
-		kfree(connector);
 	}
 
 	return 0;
@@ -5499,7 +5497,7 @@ void intel_ddi_init(struct intel_display *display,
 	 * but leave it just in case we have some really bad VBTs...
 	 */
 	if (encoder->type != INTEL_OUTPUT_EDP && init_hdmi) {
-		if (intel_ddi_init_hdmi_connector(dig_port))
+		if (intel_ddi_init_hdmi_connector(display->drm, dig_port))
 			return;
 	}
 }

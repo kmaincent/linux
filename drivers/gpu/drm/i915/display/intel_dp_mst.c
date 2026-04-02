@@ -1441,13 +1441,22 @@ mst_connector_early_unregister(struct drm_connector *_connector)
 	drm_dp_mst_connector_early_unregister(&connector->base, connector->mst.port);
 }
 
+static void mst_connector_destroy(struct drm_connector *connector)
+{
+	struct intel_connector *intel_connector = to_intel_connector(connector);
+
+	intel_connector_destroy(connector->dev, intel_connector);
+	drm_connector_cleanup(connector);
+	kfree(connector);
+}
+
 static const struct drm_connector_funcs mst_connector_funcs = {
 	.fill_modes = drm_helper_probe_single_connector_modes,
 	.atomic_get_property = intel_digital_connector_atomic_get_property,
 	.atomic_set_property = intel_digital_connector_atomic_set_property,
 	.late_register = mst_connector_late_register,
 	.early_unregister = mst_connector_early_unregister,
-	.destroy = intel_connector_destroy,
+	.destroy = mst_connector_destroy,
 	.atomic_destroy_state = drm_atomic_helper_connector_destroy_state,
 	.atomic_duplicate_state = intel_digital_connector_duplicate_state,
 };
@@ -1772,7 +1781,7 @@ mst_topology_add_connector(struct drm_dp_mst_topology_mgr *mgr,
 	enum pipe pipe;
 	int ret;
 
-	connector = intel_connector_alloc();
+	connector = intel_subconnector_alloc();
 	if (!connector)
 		return NULL;
 

@@ -1299,7 +1299,7 @@ bool g4x_dp_init(struct intel_display *display,
 	if (!dig_port)
 		return false;
 
-	intel_connector = intel_connector_alloc();
+	intel_connector = intel_connector_alloc(display->drm);
 	if (!intel_connector)
 		return false;
 
@@ -1311,11 +1311,11 @@ bool g4x_dp_init(struct intel_display *display,
 	if (drmm_encoder_init(display->drm, &intel_encoder->base,
 			      &intel_dp_enc_funcs, DRM_MODE_ENCODER_TMDS,
 			      "DP %c", port_name(port)))
-		goto err_encoder_init;
+		return false;
 
 	if (drmm_add_action_or_reset(display->drm,
 				     intel_dp_encoder_flush_work_cleanup, encoder))
-		goto err_encoder_init;
+		return false;
 
 	intel_encoder_link_check_init(intel_encoder, intel_dp_link_check);
 
@@ -1412,14 +1412,10 @@ bool g4x_dp_init(struct intel_display *display,
 
 	dig_port->aux_ch = intel_dp_aux_ch(intel_encoder);
 	if (dig_port->aux_ch == AUX_CH_NONE)
-		goto err_encoder_init;
+		return false;
 
 	if (!intel_dp_init_connector(dig_port, intel_connector))
-		goto err_encoder_init;
+		return false;
 
 	return true;
-
-err_encoder_init:
-	kfree(intel_connector);
-	return false;
 }

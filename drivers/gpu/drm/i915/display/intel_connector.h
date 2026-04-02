@@ -14,9 +14,10 @@ struct i2c_adapter;
 struct intel_connector;
 struct intel_encoder;
 
-struct intel_connector *intel_connector_alloc(void);
+struct intel_connector *intel_connector_alloc(struct drm_device *dev);
+struct intel_connector *intel_subconnector_alloc(void);
 void intel_connector_free(struct intel_connector *connector);
-void intel_connector_destroy(struct drm_connector *connector);
+void intel_connector_destroy(struct drm_device *dev, void *data);
 int intel_connector_register(struct drm_connector *connector);
 void intel_connector_unregister(struct drm_connector *connector);
 void intel_connector_attach_encoder(struct intel_connector *connector,

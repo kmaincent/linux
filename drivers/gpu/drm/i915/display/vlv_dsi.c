@@ -1560,7 +1560,6 @@ static const struct drm_connector_funcs intel_dsi_connector_funcs = {
 	.detect = intel_panel_detect,
 	.late_register = intel_connector_register,
 	.early_unregister = intel_connector_unregister,
-	.destroy = intel_connector_destroy,
 	.fill_modes = drm_helper_probe_single_connector_modes,
 	.atomic_get_property = intel_digital_connector_atomic_get_property,
 	.atomic_set_property = intel_digital_connector_atomic_set_property,
@@ -1924,7 +1923,7 @@ void vlv_dsi_init(struct intel_display *display)
 	if (IS_ERR(intel_dsi))
 		return;
 
-	connector = intel_connector_alloc();
+	connector = intel_connector_alloc(display->drm);
 	if (!connector)
 		return;
 
@@ -2011,10 +2010,15 @@ void vlv_dsi_init(struct intel_display *display)
 	intel_dsi_vbt_gpio_init(intel_dsi,
 				intel_dsi_get_hw_state(encoder, &pipe));
 
-	drm_connector_init(display->drm, &connector->base, &intel_dsi_connector_funcs,
-			   DRM_MODE_CONNECTOR_DSI);
+	drmm_connector_init(display->drm, &connector->base, &intel_dsi_connector_funcs,
+			    DRM_MODE_CONNECTOR_DSI, NULL);
 
 	drm_connector_helper_add(&connector->base, &intel_dsi_connector_helper_funcs);
+
+	if (drmm_add_action_or_reset(display->drm, intel_connector_destroy, connector)) {
+		drm_err(display->drm, "Failed to register intel_connector_destroy clean-up.\n");
+		return;
+	}
 
 	connector->base.display_info.subpixel_order = SubPixelHorizontalRGB; /*XXX*/
 
@@ -2026,7 +2030,7 @@ void vlv_dsi_init(struct intel_display *display)
 
 	if (!intel_panel_preferred_fixed_mode(connector)) {
 		drm_dbg_kms(display->drm, "no fixed mode\n");
-		goto err_cleanup_connector;
+		return;
 	}
 
 	dmi_id = dmi_first_match(vlv_dsi_dmi_quirk_table);
@@ -2042,10 +2046,4 @@ void vlv_dsi_init(struct intel_display *display)
 	intel_backlight_setup(connector, INVALID_PIPE);
 
 	vlv_dsi_add_properties(connector);
-
-	return;
-
-err_cleanup_connector:
-	drm_connector_cleanup(&connector->base);
-	kfree(connector);
 }

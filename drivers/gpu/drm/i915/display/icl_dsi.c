@@ -1783,7 +1783,6 @@ static const struct drm_connector_funcs gen11_dsi_connector_funcs = {
 	.detect = intel_panel_detect,
 	.late_register = intel_connector_register,
 	.early_unregister = intel_connector_unregister,
-	.destroy = intel_connector_destroy,
 	.fill_modes = drm_helper_probe_single_connector_modes,
 	.atomic_get_property = intel_digital_connector_atomic_get_property,
 	.atomic_set_property = intel_digital_connector_atomic_set_property,
@@ -1935,11 +1934,9 @@ void icl_dsi_init(struct intel_display *display,
 	if (IS_ERR(intel_dsi))
 		return;
 
-	intel_connector = intel_connector_alloc();
-	if (!intel_connector) {
-		kfree(intel_dsi);
+	intel_connector = intel_connector_alloc(display->drm);
+	if (!intel_connector)
 		return;
-	}
 
 	encoder = &intel_dsi->base;
 	intel_dsi->attached_connector = intel_connector;
@@ -1969,10 +1966,16 @@ void icl_dsi_init(struct intel_display *display,
 	encoder->shutdown = intel_dsi_shutdown;
 
 	/* register DSI connector with DRM subsystem */
-	drm_connector_init(display->drm, connector,
-			   &gen11_dsi_connector_funcs,
-			   DRM_MODE_CONNECTOR_DSI);
+	drmm_connector_init(display->drm, connector,
+			    &gen11_dsi_connector_funcs,
+			    DRM_MODE_CONNECTOR_DSI, NULL);
 	drm_connector_helper_add(connector, &gen11_dsi_connector_helper_funcs);
+
+	if (drmm_add_action_or_reset(display->drm, intel_connector_destroy, intel_connector)) {
+		drm_err(display->drm, "Failed to register intel_connector_destroy clean-up.\n");
+		return;
+	}
+
 	connector->display_info.subpixel_order = SubPixelHorizontalRGB;
 	intel_connector->get_hw_state = intel_connector_get_hw_state;
 
@@ -1989,7 +1992,7 @@ void icl_dsi_init(struct intel_display *display,
 
 	if (!intel_panel_preferred_fixed_mode(intel_connector)) {
 		drm_err(display->drm, "DSI fixed mode info missing\n");
-		goto err;
+		return;
 	}
 
 	intel_panel_init(intel_connector, NULL);
@@ -2012,22 +2015,17 @@ void icl_dsi_init(struct intel_display *display,
 
 		host = intel_dsi_host_init(intel_dsi, &gen11_dsi_host_ops, port);
 		if (!host)
-			goto err;
+			return;
 
 		intel_dsi->dsi_hosts[port] = host;
 	}
 
 	if (!intel_dsi_vbt_init(intel_dsi, MIPI_DSI_GENERIC_PANEL_ID)) {
 		drm_dbg_kms(display->drm, "no device found\n");
-		goto err;
+		return;
 	}
 
 	icl_dphy_param_init(intel_dsi);
 
 	icl_dsi_add_properties(intel_connector);
-	return;
-
-err:
-	drm_connector_cleanup(connector);
-	kfree(intel_connector);
 }

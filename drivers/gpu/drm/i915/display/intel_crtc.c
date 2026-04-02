@@ -8,6 +8,7 @@
 
 #include <drm/drm_atomic_helper.h>
 #include <drm/drm_fourcc.h>
+#include <drm/drm_managed.h>
 #include <drm/drm_plane.h>
 #include <drm/drm_print.h>
 #include <drm/drm_vblank.h>
@@ -191,41 +192,11 @@ void intel_crtc_state_reset(struct intel_crtc_state *crtc_state,
 	crtc_state->max_link_bpp_x16 = INT_MAX;
 }
 
-static struct intel_crtc *intel_crtc_alloc(void)
+static void intel_crtc_vblank_pm_qos_cleanup(struct drm_device *drm, void *data)
 {
-	struct intel_crtc_state *crtc_state;
-	struct intel_crtc *crtc;
-
-	crtc = kzalloc_obj(*crtc);
-	if (!crtc)
-		return ERR_PTR(-ENOMEM);
-
-	crtc_state = intel_crtc_state_alloc(crtc);
-	if (!crtc_state) {
-		kfree(crtc);
-		return ERR_PTR(-ENOMEM);
-	}
-
-	crtc->base.state = &crtc_state->uapi;
-	crtc->config = crtc_state;
-
-	return crtc;
-}
-
-static void intel_crtc_free(struct intel_crtc *crtc)
-{
-	intel_crtc_destroy_state(&crtc->base, crtc->base.state);
-	kfree(crtc);
-}
-
-static void intel_crtc_destroy(struct drm_crtc *_crtc)
-{
-	struct intel_crtc *crtc = to_intel_crtc(_crtc);
+	struct intel_crtc *crtc = data;
 
 	cpu_latency_qos_remove_request(&crtc->vblank_pm_qos);
-
-	drm_crtc_cleanup(&crtc->base);
-	kfree(crtc);
 }
 
 static void intel_crtc_del_pipe_list(struct drm_device *drm, void *data)
@@ -243,7 +214,6 @@ static int intel_crtc_late_register(struct drm_crtc *crtc)
 
 #define INTEL_CRTC_FUNCS \
 	.set_config = drm_atomic_helper_set_config, \
-	.destroy = intel_crtc_destroy, \
 	.page_flip = drm_atomic_helper_page_flip, \
 	.atomic_duplicate_state = intel_crtc_duplicate_state, \
 	.atomic_destroy_state = intel_crtc_destroy_state, \
@@ -332,28 +302,19 @@ static void add_crtc_to_pipe_list(struct intel_display *display, struct intel_cr
 static int __intel_crtc_init(struct intel_display *display, enum pipe pipe)
 {
 	struct intel_plane *primary, *cursor;
+	struct intel_crtc_state *crtc_state;
 	const struct drm_crtc_funcs *funcs;
 	struct intel_crtc *crtc;
+	u32 plane_ids_mask = 0;
 	int sprite, ret;
-
-	crtc = intel_crtc_alloc();
-	if (IS_ERR(crtc))
-		return PTR_ERR(crtc);
-
-	crtc->pipe = pipe;
-	crtc->num_scalers = DISPLAY_RUNTIME_INFO(display)->num_scalers[pipe];
 
 	if (DISPLAY_VER(display) >= 9)
 		primary = skl_universal_plane_create(display, pipe, PLANE_1);
 	else
 		primary = intel_primary_plane_create(display, pipe);
-	if (IS_ERR(primary)) {
-		ret = PTR_ERR(primary);
-		goto fail;
-	}
-	crtc->plane_ids_mask |= BIT(primary->id);
-
-	intel_init_fifo_underrun_reporting(display, crtc, false);
+	if (IS_ERR(primary))
+		return PTR_ERR(primary);
+	plane_ids_mask |= BIT(primary->id);
 
 	for_each_sprite(display, pipe, sprite) {
 		struct intel_plane *plane;
@@ -362,19 +323,15 @@ static int __intel_crtc_init(struct intel_display *display, enum pipe pipe)
 			plane = skl_universal_plane_create(display, pipe, PLANE_2 + sprite);
 		else
 			plane = intel_sprite_plane_create(display, pipe, sprite);
-		if (IS_ERR(plane)) {
-			ret = PTR_ERR(plane);
-			goto fail;
-		}
-		crtc->plane_ids_mask |= BIT(plane->id);
+		if (IS_ERR(plane))
+			return PTR_ERR(plane);
+		plane_ids_mask |= BIT(plane->id);
 	}
 
 	cursor = intel_cursor_plane_create(display, pipe);
-	if (IS_ERR(cursor)) {
-		ret = PTR_ERR(cursor);
-		goto fail;
-	}
-	crtc->plane_ids_mask |= BIT(cursor->id);
+	if (IS_ERR(cursor))
+		return PTR_ERR(cursor);
+	plane_ids_mask |= BIT(cursor->id);
 
 	if (HAS_GMCH(display)) {
 		if (display->platform.cherryview ||
@@ -397,11 +354,23 @@ static int __intel_crtc_init(struct intel_display *display, enum pipe pipe)
 			funcs = &ilk_crtc_funcs;
 	}
 
-	ret = drm_crtc_init_with_planes(display->drm, &crtc->base,
-					&primary->base, &cursor->base,
-					funcs, "pipe %c", pipe_name(pipe));
-	if (ret)
-		goto fail;
+	crtc = drmm_crtc_alloc_with_planes(display->drm, struct intel_crtc, base,
+					   &primary->base, &cursor->base,
+					   funcs, "pipe %c", pipe_name(pipe));
+	if (IS_ERR(crtc))
+		return PTR_ERR(crtc);
+
+	crtc->pipe = pipe;
+	crtc->num_scalers = DISPLAY_RUNTIME_INFO(display)->num_scalers[pipe];
+	crtc->plane_ids_mask = plane_ids_mask;
+
+	crtc_state = intel_crtc_state_alloc(crtc);
+	if (!crtc_state)
+		return -ENOMEM;
+	crtc->base.state = &crtc_state->uapi;
+	crtc->config = crtc_state;
+
+	intel_init_fifo_underrun_reporting(display, crtc, false);
 
 	if (DISPLAY_VER(display) >= 11)
 		drm_crtc_create_scaling_filter_property(&crtc->base,
@@ -413,6 +382,10 @@ static int __intel_crtc_init(struct intel_display *display, enum pipe pipe)
 	intel_crtc_crc_init(crtc);
 
 	cpu_latency_qos_add_request(&crtc->vblank_pm_qos, PM_QOS_DEFAULT_VALUE);
+
+	ret = drmm_add_action_or_reset(display->drm, intel_crtc_vblank_pm_qos_cleanup, crtc);
+	if (ret)
+		return ret;
 
 	drm_WARN_ON(display->drm, drm_crtc_index(&crtc->base) != crtc->pipe);
 
@@ -426,11 +399,6 @@ static int __intel_crtc_init(struct intel_display *display, enum pipe pipe)
 		return ret;
 
 	return 0;
-
-fail:
-	intel_crtc_free(crtc);
-
-	return ret;
 }
 
 #define HAS_PIPE(display, pipe) (DISPLAY_RUNTIME_INFO(display)->pipe_mask & BIT(pipe))

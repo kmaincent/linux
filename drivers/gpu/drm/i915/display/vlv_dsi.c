@@ -30,6 +30,7 @@
 #include <drm/drm_crtc.h>
 #include <drm/drm_edid.h>
 #include <drm/drm_mipi_dsi.h>
+#include <drm/drm_managed.h>
 #include <drm/drm_print.h>
 #include <drm/drm_probe_helper.h>
 
@@ -1531,7 +1532,6 @@ static void intel_dsi_unprepare(struct intel_encoder *encoder)
 }
 
 static const struct drm_encoder_funcs intel_dsi_funcs = {
-	.destroy = intel_encoder_destroy,
 };
 
 static enum drm_mode_status vlv_dsi_mode_valid(struct drm_connector *connector,
@@ -1918,21 +1918,18 @@ void vlv_dsi_init(struct intel_display *display)
 	else
 		display->dsi.mmio_base = VLV_MIPI_BASE;
 
-	intel_dsi = kzalloc_obj(*intel_dsi);
-	if (!intel_dsi)
+	intel_dsi = drmm_encoder_alloc(display->drm, struct intel_dsi, base.base,
+				       &intel_dsi_funcs, DRM_MODE_ENCODER_DSI,
+				       "DSI %c", port_name(port));
+	if (IS_ERR(intel_dsi))
 		return;
 
 	connector = intel_connector_alloc();
-	if (!connector) {
-		kfree(intel_dsi);
+	if (!connector)
 		return;
-	}
 
 	encoder = &intel_dsi->base;
 	intel_dsi->attached_connector = connector;
-
-	drm_encoder_init(display->drm, &encoder->base, &intel_dsi_funcs,
-			 DRM_MODE_ENCODER_DSI, "DSI %c", port_name(port));
 
 	encoder->compute_config = intel_dsi_compute_config;
 	encoder->pre_enable = intel_dsi_pre_enable;
@@ -1985,14 +1982,14 @@ void vlv_dsi_init(struct intel_display *display)
 		host = intel_dsi_host_init(intel_dsi, &intel_dsi_host_ops,
 					   port);
 		if (!host)
-			goto err;
+			return;
 
 		intel_dsi->dsi_hosts[port] = host;
 	}
 
 	if (!intel_dsi_vbt_init(intel_dsi, MIPI_DSI_GENERIC_PANEL_ID)) {
 		drm_dbg_kms(display->drm, "no device found\n");
-		goto err;
+		return;
 	}
 
 	/* Use clock read-back from current hw-state for fastboot */
@@ -2050,8 +2047,5 @@ void vlv_dsi_init(struct intel_display *display)
 
 err_cleanup_connector:
 	drm_connector_cleanup(&connector->base);
-err:
-	drm_encoder_cleanup(&encoder->base);
-	kfree(intel_dsi);
 	kfree(connector);
 }

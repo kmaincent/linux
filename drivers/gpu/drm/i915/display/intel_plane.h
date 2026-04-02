@@ -56,8 +56,9 @@ void intel_plane_update_arm(struct intel_dsb *dsb,
 void intel_plane_disable_arm(struct intel_dsb *dsb,
 			     struct intel_plane *plane,
 			     const struct intel_crtc_state *crtc_state);
-void intel_plane_state_reset(struct intel_plane_state *plane_state,
-			     struct intel_plane *plane);
+struct intel_plane *intel_plane_alloc(void);
+void intel_plane_free(struct intel_plane *plane);
+void intel_plane_destroy(struct drm_plane *plane);
 struct drm_plane_state *intel_plane_duplicate_state(struct drm_plane *plane);
 void intel_plane_destroy_state(struct drm_plane *plane,
 			       struct drm_plane_state *state);

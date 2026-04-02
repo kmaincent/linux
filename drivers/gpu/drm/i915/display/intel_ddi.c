@@ -31,7 +31,6 @@
 
 #include <drm/display/drm_dp_helper.h>
 #include <drm/display/drm_scdc_helper.h>
-#include <drm/drm_managed.h>
 #include <drm/drm_print.h>
 #include <drm/drm_privacy_screen_consumer.h>
 #include <drm/intel/step.h>
@@ -4645,19 +4644,19 @@ static int intel_ddi_compute_config_late(struct intel_encoder *encoder,
 	return 0;
 }
 
-static void intel_ddi_encoder_cleanup(struct drm_device *drm, void *data)
+static void intel_ddi_encoder_destroy(struct drm_encoder *encoder)
 {
-	struct intel_digital_port *dig_port = data;
-	struct intel_display *display = to_intel_display(&dig_port->base);
+	struct intel_display *display = to_intel_display(encoder->dev);
+	struct intel_digital_port *dig_port = enc_to_dig_port(to_intel_encoder(encoder));
 
-	intel_dp_encoder_flush_work(&dig_port->base.base);
+	intel_dp_encoder_flush_work(encoder);
+	if (intel_encoder_is_tc(&dig_port->base))
+		intel_tc_port_cleanup(dig_port);
 	intel_display_power_flush_work(display);
-	kfree(dig_port->hdcp.port_data.streams);
-}
 
-static void intel_tc_port_cleanup_action(struct drm_device *drm, void *data)
-{
-	intel_tc_port_cleanup(data);
+	drm_encoder_cleanup(encoder);
+	kfree(dig_port->hdcp.port_data.streams);
+	kfree(dig_port);
 }
 
 static void intel_ddi_encoder_reset(struct drm_encoder *encoder)
@@ -4685,6 +4684,7 @@ static int intel_ddi_encoder_late_register(struct drm_encoder *_encoder)
 
 static const struct drm_encoder_funcs intel_ddi_funcs = {
 	.reset = intel_ddi_encoder_reset,
+	.destroy = intel_ddi_encoder_destroy,
 	.late_register = intel_ddi_encoder_late_register,
 };
 
@@ -4694,7 +4694,7 @@ static int intel_ddi_init_dp_connector(struct intel_digital_port *dig_port)
 	struct intel_connector *connector;
 	enum port port = dig_port->base.port;
 
-	connector = intel_connector_alloc(display->drm);
+	connector = intel_connector_alloc();
 	if (!connector)
 		return -ENOMEM;
 
@@ -4709,8 +4709,10 @@ static int intel_ddi_init_dp_connector(struct intel_digital_port *dig_port)
 	dig_port->dp.voltage_max = intel_ddi_dp_voltage_max;
 	dig_port->dp.preemph_max = intel_ddi_dp_preemph_max;
 
-	if (!intel_dp_init_connector(dig_port, connector))
+	if (!intel_dp_init_connector(dig_port, connector)) {
+		kfree(connector);
 		return -EINVAL;
+	}
 
 	if (dig_port->base.type == INTEL_OUTPUT_EDP) {
 		struct drm_privacy_screen *privacy_screen;
@@ -4890,13 +4892,12 @@ static bool bdw_digital_port_connected(struct intel_encoder *encoder)
 	return intel_de_read(display, GEN8_DE_PORT_ISR) & bit;
 }
 
-static int intel_ddi_init_hdmi_connector(struct drm_device *dev,
-					 struct intel_digital_port *dig_port)
+static int intel_ddi_init_hdmi_connector(struct intel_digital_port *dig_port)
 {
 	struct intel_connector *connector;
 	enum port port = dig_port->base.port;
 
-	connector = intel_connector_alloc(dev);
+	connector = intel_connector_alloc();
 	if (!connector)
 		return -ENOMEM;
 
@@ -4909,6 +4910,7 @@ static int intel_ddi_init_hdmi_connector(struct drm_device *dev,
 		 * don't fail the entire DDI init.
 		 */
 		dig_port->hdmi.hdmi_reg = INVALID_MMIO_REG;
+		kfree(connector);
 	}
 
 	return 0;
@@ -5241,20 +5243,16 @@ void intel_ddi_init(struct intel_display *display,
 			    phy_name(phy));
 	}
 
-	dig_port = intel_dig_port_alloc(display->drm);
+	dig_port = intel_dig_port_alloc();
 	if (!dig_port)
 		return;
 
 	encoder = &dig_port->base;
 	encoder->devdata = devdata;
 
-	if (drmm_encoder_init(display->drm, &encoder->base, &intel_ddi_funcs,
-			      DRM_MODE_ENCODER_TMDS, "%s",
-			      intel_ddi_encoder_name(display, port, phy, &encoder_name)))
-		return;
-
-	if (drmm_add_action_or_reset(display->drm, intel_ddi_encoder_cleanup, dig_port))
-		return;
+	drm_encoder_init(display->drm, &encoder->base, &intel_ddi_funcs,
+			 DRM_MODE_ENCODER_TMDS, "%s",
+			 intel_ddi_encoder_name(display, port, phy, &encoder_name));
 
 	intel_encoder_link_check_init(encoder, intel_ddi_link_check);
 
@@ -5413,7 +5411,7 @@ void intel_ddi_init(struct intel_display *display,
 	if (need_aux_ch(encoder, init_dp)) {
 		dig_port->aux_ch = intel_dp_aux_ch(encoder);
 		if (dig_port->aux_ch == AUX_CH_NONE)
-			return;
+			goto err;
 	}
 
 	/*
@@ -5449,11 +5447,7 @@ void intel_ddi_init(struct intel_display *display,
 		dig_port->unlock = intel_tc_port_unlock;
 
 		if (intel_tc_port_init(dig_port, is_legacy) < 0)
-			return;
-
-		if (drmm_add_action_or_reset(display->drm,
-					     intel_tc_port_cleanup_action, dig_port))
-			return;
+			goto err;
 	}
 
 	drm_WARN_ON(display->drm, port > PORT_I);
@@ -5484,7 +5478,7 @@ void intel_ddi_init(struct intel_display *display,
 
 	if (init_dp) {
 		if (intel_ddi_init_dp_connector(dig_port))
-			return;
+			goto err;
 
 		dig_port->hpd_pulse = intel_dp_hpd_pulse;
 
@@ -5497,7 +5491,13 @@ void intel_ddi_init(struct intel_display *display,
 	 * but leave it just in case we have some really bad VBTs...
 	 */
 	if (encoder->type != INTEL_OUTPUT_EDP && init_hdmi) {
-		if (intel_ddi_init_hdmi_connector(display->drm, dig_port))
-			return;
+		if (intel_ddi_init_hdmi_connector(dig_port))
+			goto err;
 	}
+
+	return;
+
+err:
+	drm_encoder_cleanup(&encoder->base);
+	kfree(dig_port);
 }

@@ -31,7 +31,6 @@
 #include <drm/drm_atomic_helper.h>
 #include <drm/drm_crtc.h>
 #include <drm/drm_edid.h>
-#include <drm/drm_managed.h>
 #include <drm/drm_print.h>
 #include <drm/drm_probe_helper.h>
 
@@ -362,6 +361,7 @@ static const struct drm_connector_funcs intel_dvo_connector_funcs = {
 	.detect = intel_dvo_detect,
 	.late_register = intel_connector_register,
 	.early_unregister = intel_connector_unregister,
+	.destroy = intel_connector_destroy,
 	.fill_modes = drm_helper_probe_single_connector_modes,
 	.atomic_destroy_state = drm_atomic_helper_connector_destroy_state,
 	.atomic_duplicate_state = drm_atomic_helper_connector_duplicate_state,
@@ -372,15 +372,18 @@ static const struct drm_connector_helper_funcs intel_dvo_connector_helper_funcs 
 	.get_modes = intel_dvo_get_modes,
 };
 
-static void intel_dvo_dev_destroy(struct drm_device *drm, void *data)
+static void intel_dvo_enc_destroy(struct drm_encoder *encoder)
 {
-	struct intel_dvo *intel_dvo = data;
+	struct intel_dvo *intel_dvo = enc_to_dvo(to_intel_encoder(encoder));
 
 	if (intel_dvo->dev.dev_ops->destroy)
 		intel_dvo->dev.dev_ops->destroy(&intel_dvo->dev);
+
+	intel_encoder_destroy(encoder);
 }
 
 static const struct drm_encoder_funcs intel_dvo_enc_funcs = {
+	.destroy = intel_dvo_enc_destroy,
 };
 
 static int intel_dvo_encoder_type(const struct intel_dvo_device *dvo)
@@ -491,13 +494,15 @@ void intel_dvo_init(struct intel_display *display)
 	struct intel_encoder *encoder;
 	struct intel_dvo *intel_dvo;
 
-	intel_dvo = drmm_kzalloc(display->drm, sizeof(*intel_dvo), GFP_KERNEL);
+	intel_dvo = kzalloc_obj(*intel_dvo);
 	if (!intel_dvo)
 		return;
 
-	connector = intel_connector_alloc(display->drm);
-	if (!connector)
+	connector = intel_connector_alloc();
+	if (!connector) {
+		kfree(intel_dvo);
 		return;
+	}
 
 	intel_dvo->attached_connector = connector;
 
@@ -512,14 +517,12 @@ void intel_dvo_init(struct intel_display *display)
 	connector->get_hw_state = intel_dvo_connector_get_hw_state;
 
 	if (!intel_dvo_probe(display, intel_dvo)) {
+		kfree(intel_dvo);
 		intel_connector_free(connector);
 		return;
 	}
 
 	assert_port_valid(display, intel_dvo->dev.port);
-
-	if (drmm_add_action_or_reset(display->drm, intel_dvo_dev_destroy, intel_dvo))
-		return;
 
 	encoder->type = INTEL_OUTPUT_DVO;
 	encoder->power_domain = POWER_DOMAIN_PORT_OTHER;
@@ -530,10 +533,10 @@ void intel_dvo_init(struct intel_display *display)
 		encoder->cloneable = BIT(INTEL_OUTPUT_ANALOG) |
 			BIT(INTEL_OUTPUT_DVO);
 
-	drmm_encoder_init(display->drm, &encoder->base,
-			  &intel_dvo_enc_funcs,
-			  intel_dvo_encoder_type(&intel_dvo->dev),
-			  "DVO %c", port_name(encoder->port));
+	drm_encoder_init(display->drm, &encoder->base,
+			 &intel_dvo_enc_funcs,
+			 intel_dvo_encoder_type(&intel_dvo->dev),
+			 "DVO %c", port_name(encoder->port));
 
 	drm_dbg_kms(display->drm, "[ENCODER:%d:%s] detected %s\n",
 		    encoder->base.base.id, encoder->base.name,
@@ -544,19 +547,13 @@ void intel_dvo_init(struct intel_display *display)
 			DRM_CONNECTOR_POLL_DISCONNECT;
 	connector->base.polled = connector->polled;
 
-	drmm_connector_init(display->drm, &connector->base,
-			    &intel_dvo_connector_funcs,
-			    intel_dvo_connector_type(&intel_dvo->dev),
-			    intel_gmbus_get_adapter(display, GMBUS_PIN_DPC));
+	drm_connector_init_with_ddc(display->drm, &connector->base,
+				    &intel_dvo_connector_funcs,
+				    intel_dvo_connector_type(&intel_dvo->dev),
+				    intel_gmbus_get_adapter(display, GMBUS_PIN_DPC));
 
 	drm_connector_helper_add(&connector->base,
 				 &intel_dvo_connector_helper_funcs);
-
-	if (drmm_add_action_or_reset(display->drm, intel_connector_destroy, connector)) {
-		drm_err(display->drm, "Failed to register intel_connector_destroy clean-up.\n");
-		return;
-	}
-
 	connector->base.display_info.subpixel_order = SubPixelHorizontalRGB;
 
 	intel_connector_attach_encoder(connector, encoder);

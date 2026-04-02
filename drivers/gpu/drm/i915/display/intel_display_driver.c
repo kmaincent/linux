@@ -12,7 +12,6 @@
 #include <drm/display/drm_dp_mst_helper.h>
 #include <drm/drm_atomic_helper.h>
 #include <drm/drm_client_event.h>
-#include <drm/drm_managed.h>
 #include <drm/drm_mode_config.h>
 #include <drm/drm_privacy_screen_consumer.h>
 #include <drm/drm_print.h>
@@ -49,7 +48,6 @@
 #include "intel_fbdev.h"
 #include "intel_fdi.h"
 #include "intel_flipq.h"
-#include "intel_global_state.h"
 #include "intel_gmbus.h"
 #include "intel_hdcp.h"
 #include "intel_hotplug.h"
@@ -113,28 +111,13 @@ static const struct drm_mode_config_helper_funcs intel_mode_config_funcs = {
 	.atomic_commit_setup = drm_dp_mst_atomic_setup_commit,
 };
 
-static void intel_atomic_global_obj_cleanup_action(struct drm_device *drm, void *data)
-{
-	intel_atomic_global_obj_cleanup(data);
-}
-
-static int intel_mode_config_init(struct intel_display *display)
+static void intel_mode_config_init(struct intel_display *display)
 {
 	struct drm_mode_config *mode_config = &display->drm->mode_config;
-	int ret;
 
-	ret = drmm_mode_config_init(display->drm);
-	if (ret)
-		return ret;
-
+	drm_mode_config_init(display->drm);
 	INIT_LIST_HEAD(&display->global.obj_list);
 	INIT_LIST_HEAD(&display->pipe_list);
-
-	ret = drmm_add_action_or_reset(display->drm,
-				       intel_atomic_global_obj_cleanup_action,
-				       display);
-	if (ret)
-		return ret;
 
 	mode_config->min_width = 0;
 	mode_config->min_height = 0;
@@ -166,8 +149,12 @@ static int intel_mode_config_init(struct intel_display *display)
 	}
 
 	intel_cursor_mode_config_init(display);
+}
 
-	return 0;
+static void intel_mode_config_cleanup(struct intel_display *display)
+{
+	intel_atomic_global_obj_cleanup(display);
+	drm_mode_config_cleanup(display->drm);
 }
 
 static void intel_plane_possible_crtcs_init(struct intel_display *display)
@@ -269,9 +256,7 @@ int intel_display_driver_probe_noirq(struct intel_display *display)
 
 	intel_dmc_init(display);
 
-	ret = intel_mode_config_init(display);
-	if (ret)
-		goto cleanup_wq_unordered;
+	intel_mode_config_init(display);
 
 	ret = intel_cdclk_init(display);
 	if (ret)
@@ -472,7 +457,7 @@ int intel_display_driver_probe_nogem(struct intel_display *display)
 
 	ret = intel_crtc_init(display);
 	if (ret)
-		return ret;
+		goto err_mode_config;
 
 	intel_plane_possible_crtcs_init(display);
 	intel_dpll_init(display);
@@ -513,6 +498,8 @@ int intel_display_driver_probe_nogem(struct intel_display *display)
 
 err_hdcp:
 	intel_hdcp_component_fini(display);
+err_mode_config:
+	intel_mode_config_cleanup(display);
 
 	return ret;
 }
@@ -631,6 +618,8 @@ void intel_display_driver_remove_noirq(struct intel_display *display)
 	flush_workqueue(display->wq.unordered);
 
 	intel_hdcp_component_fini(display);
+
+	intel_mode_config_cleanup(display);
 
 	intel_dp_tunnel_mgr_cleanup(display);
 

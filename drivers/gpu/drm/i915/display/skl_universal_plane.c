@@ -7,7 +7,6 @@
 #include <drm/drm_blend.h>
 #include <drm/drm_damage_helper.h>
 #include <drm/drm_fourcc.h>
-#include <drm/drm_managed.h>
 #include <drm/drm_print.h>
 #include <drm/intel/step.h>
 
@@ -2710,6 +2709,7 @@ static bool tgl_plane_format_mod_supported(struct drm_plane *_plane,
 static const struct drm_plane_funcs skl_plane_funcs = {
 	.update_plane = drm_atomic_helper_update_plane,
 	.disable_plane = drm_atomic_helper_disable_plane,
+	.destroy = intel_plane_destroy,
 	.atomic_duplicate_state = intel_plane_duplicate_state,
 	.atomic_destroy_state = intel_plane_destroy_state,
 	.format_mod_supported = skl_plane_format_mod_supported,
@@ -2719,6 +2719,7 @@ static const struct drm_plane_funcs skl_plane_funcs = {
 static const struct drm_plane_funcs icl_plane_funcs = {
 	.update_plane = drm_atomic_helper_update_plane,
 	.disable_plane = drm_atomic_helper_disable_plane,
+	.destroy = intel_plane_destroy,
 	.atomic_duplicate_state = intel_plane_duplicate_state,
 	.atomic_destroy_state = intel_plane_destroy_state,
 	.format_mod_supported = icl_plane_format_mod_supported,
@@ -2728,6 +2729,7 @@ static const struct drm_plane_funcs icl_plane_funcs = {
 static const struct drm_plane_funcs tgl_plane_funcs = {
 	.update_plane = drm_atomic_helper_update_plane,
 	.disable_plane = drm_atomic_helper_disable_plane,
+	.destroy = intel_plane_destroy,
 	.atomic_duplicate_state = intel_plane_duplicate_state,
 	.atomic_destroy_state = intel_plane_destroy_state,
 	.format_mod_supported = tgl_plane_format_mod_supported,
@@ -2867,7 +2869,6 @@ struct intel_plane *
 skl_universal_plane_create(struct intel_display *display,
 			   enum pipe pipe, enum plane_id plane_id)
 {
-	struct intel_plane_state *plane_state;
 	const struct drm_plane_funcs *plane_funcs;
 	struct intel_plane *plane;
 	enum drm_plane_type plane_type;
@@ -2876,50 +2877,10 @@ skl_universal_plane_create(struct intel_display *display,
 	const u64 *modifiers;
 	const u32 *formats;
 	int num_formats;
+	int ret;
 	u8 caps;
 
-	if (DISPLAY_VER(display) >= 11)
-		formats = icl_get_plane_formats(display, pipe,
-						plane_id, &num_formats);
-	else if (DISPLAY_VER(display) >= 10)
-		formats = glk_get_plane_formats(display, pipe,
-						plane_id, &num_formats);
-	else
-		formats = skl_get_plane_formats(display, pipe,
-						plane_id, &num_formats);
-
-	if (DISPLAY_VER(display) >= 12)
-		plane_funcs = &tgl_plane_funcs;
-	else if (DISPLAY_VER(display) == 11)
-		plane_funcs = &icl_plane_funcs;
-	else
-		plane_funcs = &skl_plane_funcs;
-
-	if (plane_id == PLANE_1)
-		plane_type = DRM_PLANE_TYPE_PRIMARY;
-	else
-		plane_type = DRM_PLANE_TYPE_OVERLAY;
-
-	if (DISPLAY_VER(display) >= 12)
-		caps = tgl_plane_caps(display, pipe, plane_id);
-	else if (DISPLAY_VER(display) == 11)
-		caps = icl_plane_caps(display, pipe, plane_id);
-	else if (DISPLAY_VER(display) == 10)
-		caps = glk_plane_caps(display, pipe, plane_id);
-	else
-		caps = skl_plane_caps(display, pipe, plane_id);
-
-	modifiers = intel_fb_plane_get_modifiers(display, caps);
-
-	plane = drmm_universal_plane_alloc(display->drm, struct intel_plane, base,
-					   0, plane_funcs,
-					   formats, num_formats, modifiers,
-					   plane_type,
-					   "plane %d%c", plane_id + 1,
-					   pipe_name(pipe));
-
-	kfree(modifiers);
-
+	plane = intel_plane_alloc();
 	if (IS_ERR(plane))
 		return plane;
 
@@ -2998,12 +2959,50 @@ skl_universal_plane_create(struct intel_display *display,
 			plane->can_async_flip = skl_plane_can_async_flip;
 	}
 
-	plane_state = kzalloc_obj(*plane_state);
-	if (!plane_state)
-		return ERR_PTR(-ENOMEM);
+	if (DISPLAY_VER(display) >= 11)
+		formats = icl_get_plane_formats(display, pipe,
+						plane_id, &num_formats);
+	else if (DISPLAY_VER(display) >= 10)
+		formats = glk_get_plane_formats(display, pipe,
+						plane_id, &num_formats);
+	else
+		formats = skl_get_plane_formats(display, pipe,
+						plane_id, &num_formats);
 
-	intel_plane_state_reset(plane_state, plane);
-	plane->base.state = &plane_state->uapi;
+	if (DISPLAY_VER(display) >= 12)
+		plane_funcs = &tgl_plane_funcs;
+	else if (DISPLAY_VER(display) == 11)
+		plane_funcs = &icl_plane_funcs;
+	else
+		plane_funcs = &skl_plane_funcs;
+
+	if (plane_id == PLANE_1)
+		plane_type = DRM_PLANE_TYPE_PRIMARY;
+	else
+		plane_type = DRM_PLANE_TYPE_OVERLAY;
+
+	if (DISPLAY_VER(display) >= 12)
+		caps = tgl_plane_caps(display, pipe, plane_id);
+	else if (DISPLAY_VER(display) == 11)
+		caps = icl_plane_caps(display, pipe, plane_id);
+	else if (DISPLAY_VER(display) == 10)
+		caps = glk_plane_caps(display, pipe, plane_id);
+	else
+		caps = skl_plane_caps(display, pipe, plane_id);
+
+	modifiers = intel_fb_plane_get_modifiers(display, caps);
+
+	ret = drm_universal_plane_init(display->drm, &plane->base,
+				       0, plane_funcs,
+				       formats, num_formats, modifiers,
+				       plane_type,
+				       "plane %d%c", plane_id + 1,
+				       pipe_name(pipe));
+
+	kfree(modifiers);
+
+	if (ret)
+		goto fail;
 
 	if (DISPLAY_VER(display) >= 13)
 		supported_rotations = DRM_MODE_ROTATE_0 | DRM_MODE_ROTATE_180;
@@ -3053,6 +3052,11 @@ skl_universal_plane_create(struct intel_display *display,
 	intel_plane_helper_add(plane);
 
 	return plane;
+
+fail:
+	intel_plane_free(plane);
+
+	return ERR_PTR(ret);
 }
 
 void

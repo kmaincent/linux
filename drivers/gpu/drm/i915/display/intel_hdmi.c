@@ -39,7 +39,6 @@
 #include <drm/drm_atomic_helper.h>
 #include <drm/drm_crtc.h>
 #include <drm/drm_edid.h>
-#include <drm/drm_managed.h>
 #include <drm/drm_print.h>
 #include <drm/drm_probe_helper.h>
 #include <drm/intel/intel_lpe_audio.h>
@@ -2686,6 +2685,7 @@ static const struct drm_connector_funcs intel_hdmi_connector_funcs = {
 	.atomic_set_property = intel_digital_connector_atomic_set_property,
 	.late_register = intel_hdmi_connector_register,
 	.early_unregister = intel_hdmi_connector_unregister,
+	.destroy = intel_connector_destroy,
 	.atomic_destroy_state = drm_atomic_helper_connector_destroy_state,
 	.atomic_duplicate_state = intel_digital_connector_duplicate_state,
 };
@@ -3118,17 +3118,12 @@ bool intel_hdmi_init_connector(struct intel_digital_port *dig_port,
 	if (!ddc_pin)
 		return false;
 
-	drmm_connector_init(dev, connector,
-			    &intel_hdmi_connector_funcs,
-			    DRM_MODE_CONNECTOR_HDMIA,
-			    intel_gmbus_get_adapter(display, ddc_pin));
+	drm_connector_init_with_ddc(dev, connector,
+				    &intel_hdmi_connector_funcs,
+				    DRM_MODE_CONNECTOR_HDMIA,
+				    intel_gmbus_get_adapter(display, ddc_pin));
 
 	drm_connector_helper_add(connector, &intel_hdmi_connector_helper_funcs);
-
-	if (drmm_add_action_or_reset(display->drm, intel_connector_destroy, intel_connector)) {
-		drm_err(dev, "Failed to register intel_connector_destroy clean-up.\n");
-		return false;
-	}
 
 	if (DISPLAY_VER(display) < 12)
 		connector->interlace_allowed = true;

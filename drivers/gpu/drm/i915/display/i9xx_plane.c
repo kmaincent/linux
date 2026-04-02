@@ -8,7 +8,6 @@
 #include <drm/drm_atomic_helper.h>
 #include <drm/drm_blend.h>
 #include <drm/drm_fourcc.h>
-#include <drm/drm_managed.h>
 #include <drm/drm_print.h>
 
 #include "i9xx_plane.h"
@@ -883,6 +882,7 @@ static unsigned int i9xx_plane_min_alignment(struct intel_plane *plane,
 static const struct drm_plane_funcs i965_plane_funcs = {
 	.update_plane = drm_atomic_helper_update_plane,
 	.disable_plane = drm_atomic_helper_disable_plane,
+	.destroy = intel_plane_destroy,
 	.atomic_duplicate_state = intel_plane_duplicate_state,
 	.atomic_destroy_state = intel_plane_destroy_state,
 	.format_mod_supported = i965_plane_format_mod_supported,
@@ -892,6 +892,7 @@ static const struct drm_plane_funcs i965_plane_funcs = {
 static const struct drm_plane_funcs i8xx_plane_funcs = {
 	.update_plane = drm_atomic_helper_update_plane,
 	.disable_plane = drm_atomic_helper_disable_plane,
+	.destroy = intel_plane_destroy,
 	.atomic_duplicate_state = intel_plane_duplicate_state,
 	.atomic_destroy_state = intel_plane_destroy_state,
 	.format_mod_supported = i8xx_plane_format_mod_supported,
@@ -922,15 +923,32 @@ static void i9xx_disable_tiling(struct intel_plane *plane)
 struct intel_plane *
 intel_primary_plane_create(struct intel_display *display, enum pipe pipe)
 {
-	struct intel_plane_state *plane_state;
 	struct intel_plane *plane;
 	const struct drm_plane_funcs *plane_funcs;
 	unsigned int supported_rotations;
 	const u64 *modifiers;
 	const u32 *formats;
 	int num_formats;
-	enum i9xx_plane_id i9xx_plane;
-	int zpos;
+	int ret, zpos;
+
+	plane = intel_plane_alloc();
+	if (IS_ERR(plane))
+		return plane;
+
+	plane->pipe = pipe;
+	/*
+	 * On gen2/3 only plane A can do FBC, but the panel fitter and LVDS
+	 * port is hooked to pipe B. Hence we want plane A feeding pipe B.
+	 */
+	if (HAS_FBC(display) && DISPLAY_VER(display) < 4 &&
+	    INTEL_NUM_PIPES(display) == 2)
+		plane->i9xx_plane = (enum i9xx_plane_id) !pipe;
+	else
+		plane->i9xx_plane = (enum i9xx_plane_id) pipe;
+	plane->id = PLANE_PRIMARY;
+	plane->frontbuffer_bit = INTEL_FRONTBUFFER(pipe, plane->id);
+
+	intel_fbc_add_plane(i9xx_plane_fbc(display, plane->i9xx_plane), plane);
 
 	if (display->platform.valleyview || display->platform.cherryview) {
 		formats = vlv_primary_formats;
@@ -965,46 +983,6 @@ intel_primary_plane_create(struct intel_display *display, enum pipe pipe)
 		plane_funcs = &i965_plane_funcs;
 	else
 		plane_funcs = &i8xx_plane_funcs;
-
-	/*
-	 * On gen2/3 only plane A can do FBC, but the panel fitter and LVDS
-	 * port is hooked to pipe B. Hence we want plane A feeding pipe B.
-	 */
-	if (HAS_FBC(display) && DISPLAY_VER(display) < 4 &&
-	    INTEL_NUM_PIPES(display) == 2)
-		i9xx_plane = (enum i9xx_plane_id) !pipe;
-	else
-		i9xx_plane = (enum i9xx_plane_id) pipe;
-
-	modifiers = intel_fb_plane_get_modifiers(display, INTEL_PLANE_CAP_TILING_X);
-
-	if (DISPLAY_VER(display) >= 5 || display->platform.g4x)
-		plane = drmm_universal_plane_alloc(display->drm, struct intel_plane, base,
-						   0, plane_funcs,
-						   formats, num_formats,
-						   modifiers,
-						   DRM_PLANE_TYPE_PRIMARY,
-						   "primary %c", pipe_name(pipe));
-	else
-		plane = drmm_universal_plane_alloc(display->drm, struct intel_plane, base,
-						   0, plane_funcs,
-						   formats, num_formats,
-						   modifiers,
-						   DRM_PLANE_TYPE_PRIMARY,
-						   "plane %c",
-						   plane_name(i9xx_plane));
-
-	kfree(modifiers);
-
-	if (IS_ERR(plane))
-		return plane;
-
-	plane->pipe = pipe;
-	plane->i9xx_plane = i9xx_plane;
-	plane->id = PLANE_PRIMARY;
-	plane->frontbuffer_bit = INTEL_FRONTBUFFER(pipe, plane->id);
-
-	intel_fbc_add_plane(i9xx_plane_fbc(display, plane->i9xx_plane), plane);
 
 	if (display->platform.valleyview || display->platform.cherryview)
 		plane->min_cdclk = vlv_plane_min_cdclk;
@@ -1091,12 +1069,28 @@ intel_primary_plane_create(struct intel_display *display, enum pipe pipe)
 
 	plane->disable_tiling = i9xx_disable_tiling;
 
-	plane_state = kzalloc_obj(*plane_state);
-	if (!plane_state)
-		return ERR_PTR(-ENOMEM);
+	modifiers = intel_fb_plane_get_modifiers(display, INTEL_PLANE_CAP_TILING_X);
 
-	intel_plane_state_reset(plane_state, plane);
-	plane->base.state = &plane_state->uapi;
+	if (DISPLAY_VER(display) >= 5 || display->platform.g4x)
+		ret = drm_universal_plane_init(display->drm, &plane->base,
+					       0, plane_funcs,
+					       formats, num_formats,
+					       modifiers,
+					       DRM_PLANE_TYPE_PRIMARY,
+					       "primary %c", pipe_name(pipe));
+	else
+		ret = drm_universal_plane_init(display->drm, &plane->base,
+					       0, plane_funcs,
+					       formats, num_formats,
+					       modifiers,
+					       DRM_PLANE_TYPE_PRIMARY,
+					       "plane %c",
+					       plane_name(plane->i9xx_plane));
+
+	kfree(modifiers);
+
+	if (ret)
+		goto fail;
 
 	if (display->platform.cherryview && pipe == PIPE_B) {
 		supported_rotations =
@@ -1120,6 +1114,11 @@ intel_primary_plane_create(struct intel_display *display, enum pipe pipe)
 	intel_plane_helper_add(plane);
 
 	return plane;
+
+fail:
+	intel_plane_free(plane);
+
+	return ERR_PTR(ret);
 }
 
 static int i9xx_format_to_fourcc(int format)

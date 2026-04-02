@@ -2170,6 +2170,13 @@ static void i9xx_crtc_disable(struct intel_atomic_state *state,
 		i830_enable_pipe(display, pipe);
 }
 
+void intel_encoder_destroy(struct drm_encoder *encoder)
+{
+	struct intel_encoder *intel_encoder = to_intel_encoder(encoder);
+
+	drm_encoder_cleanup(encoder);
+	kfree(intel_encoder);
+}
 
 static bool intel_crtc_supports_double_wide(const struct intel_crtc *crtc)
 {

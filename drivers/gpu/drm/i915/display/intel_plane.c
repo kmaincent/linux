@@ -62,8 +62,8 @@
 #include "skl_universal_plane.h"
 #include "skl_watermark.h"
 
-void intel_plane_state_reset(struct intel_plane_state *plane_state,
-			     struct intel_plane *plane)
+static void intel_plane_state_reset(struct intel_plane_state *plane_state,
+				    struct intel_plane *plane)
 {
 	memset(plane_state, 0, sizeof(*plane_state));
 
@@ -71,6 +71,47 @@ void intel_plane_state_reset(struct intel_plane_state *plane_state,
 
 	plane_state->scaler_id = -1;
 	plane_state->fence_id = -1;
+}
+
+struct intel_plane *intel_plane_alloc(void)
+{
+	struct intel_plane_state *plane_state;
+	struct intel_plane *plane;
+
+	plane = kzalloc_obj(*plane);
+	if (!plane)
+		return ERR_PTR(-ENOMEM);
+
+	plane_state = kzalloc_obj(*plane_state);
+	if (!plane_state) {
+		kfree(plane);
+		return ERR_PTR(-ENOMEM);
+	}
+
+	intel_plane_state_reset(plane_state, plane);
+
+	plane->base.state = &plane_state->uapi;
+
+	return plane;
+}
+
+void intel_plane_free(struct intel_plane *plane)
+{
+	intel_plane_destroy_state(&plane->base, plane->base.state);
+	kfree(plane);
+}
+
+/**
+ * intel_plane_destroy - destroy a plane
+ * @plane: plane to destroy
+ *
+ * Common destruction function for all types of planes (primary, cursor,
+ * sprite).
+ */
+void intel_plane_destroy(struct drm_plane *plane)
+{
+	drm_plane_cleanup(plane);
+	kfree(to_intel_plane(plane));
 }
 
 /**

@@ -33,7 +33,6 @@
 #include <drm/drm_atomic_helper.h>
 #include <drm/drm_crtc.h>
 #include <drm/drm_edid.h>
-#include <drm/drm_managed.h>
 #include <drm/drm_print.h>
 #include <drm/drm_probe_helper.h>
 
@@ -1841,6 +1840,7 @@ intel_tv_get_modes(struct drm_connector *connector)
 static const struct drm_connector_funcs intel_tv_connector_funcs = {
 	.late_register = intel_connector_register,
 	.early_unregister = intel_connector_unregister,
+	.destroy = intel_connector_destroy,
 	.fill_modes = drm_helper_probe_single_connector_modes,
 	.atomic_destroy_state = drm_atomic_helper_connector_destroy_state,
 	.atomic_duplicate_state = intel_tv_connector_duplicate_state,
@@ -1881,6 +1881,7 @@ static const struct drm_connector_helper_funcs intel_tv_connector_helper_funcs =
 };
 
 static const struct drm_encoder_funcs intel_tv_enc_funcs = {
+	.destroy = intel_encoder_destroy,
 };
 
 static void intel_tv_add_properties(struct drm_connector *connector)
@@ -1965,14 +1966,16 @@ intel_tv_init(struct intel_display *display)
 	    (tv_dac_off & TVDAC_STATE_CHG_EN) != 0)
 		return;
 
-	intel_tv = drmm_encoder_alloc(display->drm, struct intel_tv, base.base,
-				      &intel_tv_enc_funcs, DRM_MODE_ENCODER_TVDAC, "TV");
-	if (IS_ERR(intel_tv))
+	intel_tv = kzalloc_obj(*intel_tv);
+	if (!intel_tv) {
 		return;
+	}
 
-	intel_connector = intel_connector_alloc(display->drm);
-	if (!intel_connector)
+	intel_connector = intel_connector_alloc();
+	if (!intel_connector) {
+		kfree(intel_tv);
 		return;
+	}
 
 	intel_encoder = &intel_tv->base;
 	connector = &intel_connector->base;
@@ -1990,13 +1993,12 @@ intel_tv_init(struct intel_display *display)
 	intel_connector->polled = DRM_CONNECTOR_POLL_CONNECT;
 	intel_connector->base.polled = intel_connector->polled;
 
-	drmm_connector_init(display->drm, connector, &intel_tv_connector_funcs,
-			   DRM_MODE_CONNECTOR_SVIDEO, NULL);
+	drm_connector_init(display->drm, connector, &intel_tv_connector_funcs,
+			   DRM_MODE_CONNECTOR_SVIDEO);
 
-	if (drmm_add_action_or_reset(display->drm, intel_connector_destroy, intel_connector)) {
-		drm_err(display->drm, "Failed to register intel_connector_destroy clean-up.\n");
-		return;
-	}
+	drm_encoder_init(display->drm, &intel_encoder->base,
+			 &intel_tv_enc_funcs,
+			 DRM_MODE_ENCODER_TVDAC, "TV");
 
 	intel_encoder->compute_config = intel_tv_compute_config;
 	intel_encoder->get_config = intel_tv_get_config;

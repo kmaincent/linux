@@ -36,7 +36,6 @@
 #include <drm/drm_blend.h>
 #include <drm/drm_color_mgmt.h>
 #include <drm/drm_fourcc.h>
-#include <drm/drm_managed.h>
 #include <drm/drm_print.h>
 #include <drm/drm_rect.h>
 
@@ -1564,6 +1563,7 @@ static bool vlv_sprite_format_mod_supported(struct drm_plane *_plane,
 static const struct drm_plane_funcs g4x_sprite_funcs = {
 	.update_plane = drm_atomic_helper_update_plane,
 	.disable_plane = drm_atomic_helper_disable_plane,
+	.destroy = intel_plane_destroy,
 	.atomic_duplicate_state = intel_plane_duplicate_state,
 	.atomic_destroy_state = intel_plane_destroy_state,
 	.format_mod_supported = g4x_sprite_format_mod_supported,
@@ -1573,6 +1573,7 @@ static const struct drm_plane_funcs g4x_sprite_funcs = {
 static const struct drm_plane_funcs snb_sprite_funcs = {
 	.update_plane = drm_atomic_helper_update_plane,
 	.disable_plane = drm_atomic_helper_disable_plane,
+	.destroy = intel_plane_destroy,
 	.atomic_duplicate_state = intel_plane_duplicate_state,
 	.atomic_destroy_state = intel_plane_destroy_state,
 	.format_mod_supported = snb_sprite_format_mod_supported,
@@ -1582,6 +1583,7 @@ static const struct drm_plane_funcs snb_sprite_funcs = {
 static const struct drm_plane_funcs vlv_sprite_funcs = {
 	.update_plane = drm_atomic_helper_update_plane,
 	.disable_plane = drm_atomic_helper_disable_plane,
+	.destroy = intel_plane_destroy,
 	.atomic_duplicate_state = intel_plane_duplicate_state,
 	.atomic_destroy_state = intel_plane_destroy_state,
 	.format_mod_supported = vlv_sprite_format_mod_supported,
@@ -1592,16 +1594,34 @@ struct intel_plane *
 intel_sprite_plane_create(struct intel_display *display,
 			  enum pipe pipe, int sprite)
 {
-	struct intel_plane_state *plane_state;
 	struct intel_plane *plane;
 	const struct drm_plane_funcs *plane_funcs;
 	unsigned int supported_rotations;
 	const u64 *modifiers;
 	const u32 *formats;
 	int num_formats;
-	int zpos;
+	int ret, zpos;
+
+	plane = intel_plane_alloc();
+	if (IS_ERR(plane))
+		return plane;
 
 	if (display->platform.valleyview || display->platform.cherryview) {
+		plane->update_noarm = vlv_sprite_update_noarm;
+		plane->update_arm = vlv_sprite_update_arm;
+		plane->disable_arm = vlv_sprite_disable_arm;
+		plane->capture_error = vlv_sprite_capture_error;
+		plane->get_hw_state = vlv_sprite_get_hw_state;
+		plane->check_plane = vlv_sprite_check;
+		plane->surf_offset = i965_plane_surf_offset;
+		plane->max_stride = i965_plane_max_stride;
+		plane->min_alignment = vlv_plane_min_alignment;
+		plane->min_cdclk = vlv_plane_min_cdclk;
+
+		/* FIXME undocumented for VLV/CHV so not sure what's actually needed */
+		if (intel_scanout_needs_vtd_wa(display))
+			plane->vtd_guard = 128;
+
 		if (display->platform.cherryview && pipe == PIPE_B) {
 			formats = chv_pipe_b_sprite_formats;
 			num_formats = ARRAY_SIZE(chv_pipe_b_sprite_formats);
@@ -1612,11 +1632,46 @@ intel_sprite_plane_create(struct intel_display *display,
 
 		plane_funcs = &vlv_sprite_funcs;
 	} else if (DISPLAY_VER(display) >= 7) {
+		plane->update_noarm = ivb_sprite_update_noarm;
+		plane->update_arm = ivb_sprite_update_arm;
+		plane->disable_arm = ivb_sprite_disable_arm;
+		plane->capture_error = ivb_sprite_capture_error;
+		plane->get_hw_state = ivb_sprite_get_hw_state;
+		plane->check_plane = g4x_sprite_check;
+		plane->surf_offset = i965_plane_surf_offset;
+
+		if (display->platform.broadwell || display->platform.haswell) {
+			plane->max_stride = hsw_sprite_max_stride;
+			plane->min_cdclk = hsw_plane_min_cdclk;
+		} else {
+			plane->max_stride = g4x_sprite_max_stride;
+			plane->min_cdclk = ivb_sprite_min_cdclk;
+		}
+
+		plane->min_alignment = g4x_sprite_min_alignment;
+
+		if (intel_scanout_needs_vtd_wa(display))
+			plane->vtd_guard = 64;
+
 		formats = snb_sprite_formats;
 		num_formats = ARRAY_SIZE(snb_sprite_formats);
 
 		plane_funcs = &snb_sprite_funcs;
 	} else {
+		plane->update_noarm = g4x_sprite_update_noarm;
+		plane->update_arm = g4x_sprite_update_arm;
+		plane->disable_arm = g4x_sprite_disable_arm;
+		plane->capture_error = g4x_sprite_capture_error;
+		plane->get_hw_state = g4x_sprite_get_hw_state;
+		plane->check_plane = g4x_sprite_check;
+		plane->surf_offset = i965_plane_surf_offset;
+		plane->max_stride = g4x_sprite_max_stride;
+		plane->min_alignment = g4x_sprite_min_alignment;
+		plane->min_cdclk = g4x_sprite_min_cdclk;
+
+		if (intel_scanout_needs_vtd_wa(display))
+			plane->vtd_guard = 64;
+
 		if (display->platform.sandybridge) {
 			formats = snb_sprite_formats;
 			num_formats = ARRAY_SIZE(snb_sprite_formats);
@@ -1639,80 +1694,21 @@ intel_sprite_plane_create(struct intel_display *display,
 			DRM_MODE_ROTATE_0 | DRM_MODE_ROTATE_180;
 	}
 
-	modifiers = intel_fb_plane_get_modifiers(display, INTEL_PLANE_CAP_TILING_X);
-
-	plane = drmm_universal_plane_alloc(display->drm, struct intel_plane, base,
-					   0, plane_funcs,
-					   formats, num_formats, modifiers,
-					   DRM_PLANE_TYPE_OVERLAY,
-					   "sprite %c", sprite_name(display, pipe, sprite));
-	kfree(modifiers);
-
-	if (IS_ERR(plane))
-		return plane;
-
 	plane->pipe = pipe;
 	plane->id = PLANE_SPRITE0 + sprite;
 	plane->frontbuffer_bit = INTEL_FRONTBUFFER(pipe, plane->id);
 
-	if (display->platform.valleyview || display->platform.cherryview) {
-		plane->update_noarm = vlv_sprite_update_noarm;
-		plane->update_arm = vlv_sprite_update_arm;
-		plane->disable_arm = vlv_sprite_disable_arm;
-		plane->capture_error = vlv_sprite_capture_error;
-		plane->get_hw_state = vlv_sprite_get_hw_state;
-		plane->check_plane = vlv_sprite_check;
-		plane->surf_offset = i965_plane_surf_offset;
-		plane->max_stride = i965_plane_max_stride;
-		plane->min_alignment = vlv_plane_min_alignment;
-		plane->min_cdclk = vlv_plane_min_cdclk;
+	modifiers = intel_fb_plane_get_modifiers(display, INTEL_PLANE_CAP_TILING_X);
 
-		/* FIXME undocumented for VLV/CHV so not sure what's actually needed */
-		if (intel_scanout_needs_vtd_wa(display))
-			plane->vtd_guard = 128;
-	} else if (DISPLAY_VER(display) >= 7) {
-		plane->update_noarm = ivb_sprite_update_noarm;
-		plane->update_arm = ivb_sprite_update_arm;
-		plane->disable_arm = ivb_sprite_disable_arm;
-		plane->capture_error = ivb_sprite_capture_error;
-		plane->get_hw_state = ivb_sprite_get_hw_state;
-		plane->check_plane = g4x_sprite_check;
-		plane->surf_offset = i965_plane_surf_offset;
+	ret = drm_universal_plane_init(display->drm, &plane->base,
+				       0, plane_funcs,
+				       formats, num_formats, modifiers,
+				       DRM_PLANE_TYPE_OVERLAY,
+				       "sprite %c", sprite_name(display, pipe, sprite));
+	kfree(modifiers);
 
-		if (display->platform.broadwell || display->platform.haswell) {
-			plane->max_stride = hsw_sprite_max_stride;
-			plane->min_cdclk = hsw_plane_min_cdclk;
-		} else {
-			plane->max_stride = g4x_sprite_max_stride;
-			plane->min_cdclk = ivb_sprite_min_cdclk;
-		}
-
-		plane->min_alignment = g4x_sprite_min_alignment;
-
-		if (intel_scanout_needs_vtd_wa(display))
-			plane->vtd_guard = 64;
-	} else {
-		plane->update_noarm = g4x_sprite_update_noarm;
-		plane->update_arm = g4x_sprite_update_arm;
-		plane->disable_arm = g4x_sprite_disable_arm;
-		plane->capture_error = g4x_sprite_capture_error;
-		plane->get_hw_state = g4x_sprite_get_hw_state;
-		plane->check_plane = g4x_sprite_check;
-		plane->surf_offset = i965_plane_surf_offset;
-		plane->max_stride = g4x_sprite_max_stride;
-		plane->min_alignment = g4x_sprite_min_alignment;
-		plane->min_cdclk = g4x_sprite_min_cdclk;
-
-		if (intel_scanout_needs_vtd_wa(display))
-			plane->vtd_guard = 64;
-	}
-
-	plane_state = kzalloc_obj(*plane_state);
-	if (!plane_state)
-		return ERR_PTR(-ENOMEM);
-
-	intel_plane_state_reset(plane_state, plane);
-	plane->base.state = &plane_state->uapi;
+	if (ret)
+		goto fail;
 
 	drm_plane_create_rotation_property(&plane->base,
 					   DRM_MODE_ROTATE_0,
@@ -1732,4 +1728,9 @@ intel_sprite_plane_create(struct intel_display *display,
 	intel_plane_helper_add(plane);
 
 	return plane;
+
+fail:
+	intel_plane_free(plane);
+
+	return ERR_PTR(ret);
 }

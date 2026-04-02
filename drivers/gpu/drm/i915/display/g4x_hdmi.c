@@ -5,7 +5,6 @@
  * HDMI support for G4x,ILK,SNB,IVB,VLV,CHV (HSW+ handled by the DDI code).
  */
 
-#include <drm/drm_managed.h>
 #include <drm/drm_print.h>
 
 #include "g4x_hdmi.h"
@@ -563,6 +562,7 @@ static void chv_hdmi_pre_enable(struct intel_atomic_state *state,
 }
 
 static const struct drm_encoder_funcs intel_hdmi_enc_funcs = {
+	.destroy = intel_encoder_destroy,
 };
 
 static enum intel_hotplug_state
@@ -686,22 +686,22 @@ bool g4x_hdmi_init(struct intel_display *display,
 		drm_dbg_kms(display->drm, "No VBT child device for HDMI-%c\n",
 			    port_name(port));
 
-	dig_port = intel_dig_port_alloc(display->drm);
+	dig_port = intel_dig_port_alloc();
 	if (!dig_port)
 		return false;
 
-	intel_connector = intel_connector_alloc(display->drm);
+	intel_connector = intel_connector_alloc();
 	if (!intel_connector)
-		return false;
+		goto err_connector_alloc;
 
 	intel_encoder = &dig_port->base;
 
 	intel_encoder->devdata = devdata;
 
-	if (drmm_encoder_init(display->drm, &intel_encoder->base,
-			      &intel_hdmi_enc_funcs, DRM_MODE_ENCODER_TMDS,
-			      "HDMI %c", port_name(port)))
-		return false;
+	if (drm_encoder_init(display->drm, &intel_encoder->base,
+			     &intel_hdmi_enc_funcs, DRM_MODE_ENCODER_TMDS,
+			     "HDMI %c", port_name(port)))
+		goto err_encoder_init;
 
 	intel_encoder->hotplug = intel_hdmi_hotplug;
 	intel_encoder->compute_config = g4x_hdmi_compute_config;
@@ -763,7 +763,16 @@ bool g4x_hdmi_init(struct intel_display *display,
 	intel_infoframe_init(dig_port);
 
 	if (!intel_hdmi_init_connector(dig_port, intel_connector))
-		return false;
+		goto err_init_connector;
 
 	return true;
+
+err_init_connector:
+	drm_encoder_cleanup(&intel_encoder->base);
+err_encoder_init:
+	kfree(intel_connector);
+err_connector_alloc:
+	kfree(dig_port);
+
+	return false;
 }

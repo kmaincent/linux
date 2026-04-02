@@ -37,7 +37,6 @@
 #include <drm/drm_atomic_helper.h>
 #include <drm/drm_crtc.h>
 #include <drm/drm_edid.h>
-#include <drm/drm_managed.h>
 #include <drm/drm_print.h>
 #include <drm/drm_probe_helper.h>
 
@@ -512,11 +511,13 @@ static const struct drm_connector_funcs intel_lvds_connector_funcs = {
 	.atomic_set_property = intel_digital_connector_atomic_set_property,
 	.late_register = intel_connector_register,
 	.early_unregister = intel_connector_unregister,
+	.destroy = intel_connector_destroy,
 	.atomic_destroy_state = drm_atomic_helper_connector_destroy_state,
 	.atomic_duplicate_state = intel_digital_connector_duplicate_state,
 };
 
 static const struct drm_encoder_funcs intel_lvds_enc_funcs = {
+	.destroy = intel_encoder_destroy,
 };
 
 static int intel_no_lvds_dmi_callback(const struct dmi_system_id *id)
@@ -885,28 +886,26 @@ void intel_lvds_init(struct intel_display *display)
 			    "LVDS is not present in VBT, but enabled anyway\n");
 	}
 
-	lvds_encoder = drmm_encoder_alloc(display->drm, struct intel_lvds_encoder, base.base,
-					  &intel_lvds_enc_funcs, DRM_MODE_ENCODER_LVDS, "LVDS");
-	if (IS_ERR(lvds_encoder))
+	lvds_encoder = kzalloc_obj(*lvds_encoder);
+	if (!lvds_encoder)
 		return;
 
-	encoder = &lvds_encoder->base;
-
-	connector = intel_connector_alloc(display->drm);
-	if (!connector)
-		return;
-
-	lvds_encoder->attached_connector = connector;
-
-	drmm_connector_init(display->drm, &connector->base,
-			    &intel_lvds_connector_funcs,
-			    DRM_MODE_CONNECTOR_LVDS,
-			    intel_gmbus_get_adapter(display, ddc_pin));
-
-	if (drmm_add_action_or_reset(display->drm, intel_connector_destroy, connector)) {
-		drm_err(display->drm, "Failed to register intel_connector_destroy clean-up.\n");
+	connector = intel_connector_alloc();
+	if (!connector) {
+		kfree(lvds_encoder);
 		return;
 	}
+
+	lvds_encoder->attached_connector = connector;
+	encoder = &lvds_encoder->base;
+
+	drm_connector_init_with_ddc(display->drm, &connector->base,
+				    &intel_lvds_connector_funcs,
+				    DRM_MODE_CONNECTOR_LVDS,
+				    intel_gmbus_get_adapter(display, ddc_pin));
+
+	drm_encoder_init(display->drm, &encoder->base, &intel_lvds_enc_funcs,
+			 DRM_MODE_ENCODER_LVDS, "LVDS");
 
 	encoder->enable = intel_enable_lvds;
 	encoder->pre_enable = intel_pre_enable_lvds;

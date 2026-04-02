@@ -31,7 +31,6 @@
 #include <drm/drm_atomic_helper.h>
 #include <drm/drm_crtc.h>
 #include <drm/drm_edid.h>
-#include <drm/drm_managed.h>
 #include <drm/drm_print.h>
 #include <drm/drm_probe_helper.h>
 #include <video/vga.h>
@@ -992,6 +991,7 @@ static const struct drm_connector_funcs intel_crt_connector_funcs = {
 	.fill_modes = drm_helper_probe_single_connector_modes,
 	.late_register = intel_connector_register,
 	.early_unregister = intel_connector_unregister,
+	.destroy = intel_connector_destroy,
 	.atomic_destroy_state = drm_atomic_helper_connector_destroy_state,
 	.atomic_duplicate_state = drm_atomic_helper_connector_duplicate_state,
 };
@@ -1004,6 +1004,7 @@ static const struct drm_connector_helper_funcs intel_crt_connector_helper_funcs 
 
 static const struct drm_encoder_funcs intel_crt_enc_funcs = {
 	.reset = intel_crt_reset,
+	.destroy = intel_encoder_destroy,
 };
 
 void intel_crt_init(struct intel_display *display)
@@ -1040,26 +1041,25 @@ void intel_crt_init(struct intel_display *display)
 		intel_de_write(display, adpa_reg, adpa);
 	}
 
-	crt = drmm_encoder_alloc(display->drm, struct intel_crt, base.base,
-				 &intel_crt_enc_funcs, DRM_MODE_ENCODER_DAC, "CRT");
-	if (IS_ERR(crt))
+	crt = kzalloc_obj(struct intel_crt);
+	if (!crt)
 		return;
 
-	connector = intel_connector_alloc(display->drm);
-	if (!connector)
+	connector = intel_connector_alloc();
+	if (!connector) {
+		kfree(crt);
 		return;
+	}
 
 	ddc_pin = display->vbt.crt_ddc_pin;
 
-	drmm_connector_init(display->drm, &connector->base,
-			    &intel_crt_connector_funcs,
-			    DRM_MODE_CONNECTOR_VGA,
-			    intel_gmbus_get_adapter(display, ddc_pin));
+	drm_connector_init_with_ddc(display->drm, &connector->base,
+				    &intel_crt_connector_funcs,
+				    DRM_MODE_CONNECTOR_VGA,
+				    intel_gmbus_get_adapter(display, ddc_pin));
 
-	if (drmm_add_action_or_reset(display->drm, intel_connector_destroy, connector)) {
-		drm_err(display->drm, "Failed to register intel_connector_destroy clean-up.\n");
-		return;
-	}
+	drm_encoder_init(display->drm, &crt->base.base, &intel_crt_enc_funcs,
+			 DRM_MODE_ENCODER_DAC, "CRT");
 
 	intel_connector_attach_encoder(connector, &crt->base);
 

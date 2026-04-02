@@ -9,7 +9,6 @@
 #include <drm/drm_blend.h>
 #include <drm/drm_damage_helper.h>
 #include <drm/drm_fourcc.h>
-#include <drm/drm_managed.h>
 #include <drm/drm_print.h>
 #include <drm/drm_vblank.h>
 
@@ -972,6 +971,7 @@ slow:
 static const struct drm_plane_funcs intel_cursor_plane_funcs = {
 	.update_plane = intel_legacy_cursor_update,
 	.disable_plane = drm_atomic_helper_disable_plane,
+	.destroy = intel_plane_destroy,
 	.atomic_duplicate_state = intel_plane_duplicate_state,
 	.atomic_destroy_state = intel_plane_destroy_state,
 	.format_mod_supported = intel_cursor_format_mod_supported,
@@ -1004,23 +1004,11 @@ struct intel_plane *
 intel_cursor_plane_create(struct intel_display *display,
 			  enum pipe pipe)
 {
-	struct intel_plane_state *plane_state;
 	struct intel_plane *cursor;
-	int zpos;
+	int ret, zpos;
 	u64 *modifiers;
 
-	modifiers = intel_fb_plane_get_modifiers(display, INTEL_PLANE_CAP_NONE);
-
-	cursor = drmm_universal_plane_alloc(display->drm, struct intel_plane, base,
-					    0, &intel_cursor_plane_funcs,
-					    intel_cursor_formats,
-					    ARRAY_SIZE(intel_cursor_formats),
-					    modifiers,
-					    DRM_PLANE_TYPE_CURSOR,
-					    "cursor %c", pipe_name(pipe));
-
-	kfree(modifiers);
-
+	cursor = intel_plane_alloc();
 	if (IS_ERR(cursor))
 		return cursor;
 
@@ -1068,12 +1056,20 @@ intel_cursor_plane_create(struct intel_display *display,
 	if (display->platform.i845g || display->platform.i865g || HAS_CUR_FBC(display))
 		cursor->cursor.size = ~0;
 
-	plane_state = kzalloc_obj(*plane_state);
-	if (!plane_state)
-		return ERR_PTR(-ENOMEM);
+	modifiers = intel_fb_plane_get_modifiers(display, INTEL_PLANE_CAP_NONE);
 
-	intel_plane_state_reset(plane_state, cursor);
-	cursor->base.state = &plane_state->uapi;
+	ret = drm_universal_plane_init(display->drm, &cursor->base,
+				       0, &intel_cursor_plane_funcs,
+				       intel_cursor_formats,
+				       ARRAY_SIZE(intel_cursor_formats),
+				       modifiers,
+				       DRM_PLANE_TYPE_CURSOR,
+				       "cursor %c", pipe_name(pipe));
+
+	kfree(modifiers);
+
+	if (ret)
+		goto fail;
 
 	if (DISPLAY_VER(display) >= 4)
 		drm_plane_create_rotation_property(&cursor->base,
@@ -1092,6 +1088,11 @@ intel_cursor_plane_create(struct intel_display *display,
 	intel_plane_helper_add(cursor);
 
 	return cursor;
+
+fail:
+	intel_plane_free(cursor);
+
+	return ERR_PTR(ret);
 }
 
 void intel_cursor_mode_config_init(struct intel_display *display)

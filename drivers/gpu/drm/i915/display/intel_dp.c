@@ -6233,16 +6233,18 @@ void intel_dp_dpcd_set_probe(struct intel_dp *intel_dp, bool force_on_external)
 static void intel_dp_set_source_caps(struct intel_connector *connector,
 				     struct intel_dp *intel_dp)
 {
-	int lane_count;
-	bool dsc;
+	struct drm_connector_dp_link_caps link_caps;
+	int ret;
 
-	lane_count = intel_dp->dpcd[DP_MAX_LANE_COUNT] & DP_MAX_LANE_COUNT_MASK;
+	link_caps.nlanes = intel_dp->dpcd[DP_MAX_LANE_COUNT] & DP_MAX_LANE_COUNT_MASK;
+	link_caps.nlink_rates = intel_dp->num_sink_rates;
+	link_caps.link_rates = intel_dp->sink_rates;
+	link_caps.dsc = !!(connector->dp.dsc_dpcd[DP_DSC_SUPPORT] &&
+			   DP_DSC_DECOMPRESSION_IS_SUPPORTED);
 
-	dsc = !!(connector->dp.dsc_dpcd[DP_DSC_SUPPORT] &&
-		 DP_DSC_DECOMPRESSION_IS_SUPPORTED);
-
-	drm_dp_sink_set_caps(&connector->base, lane_count, intel_dp->sink_rates,
-			     intel_dp->num_sink_rates, dsc);
+	ret = drm_dp_sink_set_caps(&connector->base, &link_caps);
+	if (ret)
+		drm_err(connector->base.drm, "failed to set sink caps (%d)\n", ret);
 }
 
 static int

@@ -4901,7 +4901,7 @@ int drm_dp_max_dprx_data_rate(int max_link_rate, int max_lanes)
 }
 EXPORT_SYMBOL(drm_dp_max_dprx_data_rate);
 
-static int drm_dp_copy_caps(struct drm_connector_dp_link_caps *dest_caps
+static int drm_dp_copy_caps(struct drm_connector_dp_link_caps *dest_caps,
 			    const struct drm_connector_dp_link_caps *src_caps)
 {
 	int *_link_rates;
@@ -4913,13 +4913,12 @@ static int drm_dp_copy_caps(struct drm_connector_dp_link_caps *dest_caps
 	if (!_link_rates)
 		return -ENOMEM;
 
-	if (dest_caps.link_rates)
-		kfree(dest_caps.link_rates);
+	kfree(dest_caps->link_rates);
 
-	dest_caps.nlanes = src_caps->nlanes;
-	dest_caps.nlink_rates = src_caps->nlink_rates;
-	dest_caps.link_rates = _link_rates;
-	dest_caps.dsc = src_caps->dsc;
+	dest_caps->nlanes = src_caps->nlanes;
+	dest_caps->nlink_rates = src_caps->nlink_rates;
+	dest_caps->link_rates = _link_rates;
+	dest_caps->dsc = src_caps->dsc;
 
 	return 0;
 }
@@ -4941,7 +4940,7 @@ int drm_dp_source_set_caps(struct drm_connector *connector,
 	      connector->connector_type == DRM_MODE_CONNECTOR_eDP))
 		return -EINVAL;
 
-	return drm_dp_copy_caps(connector->dp.source_link_caps, link_caps);
+	return drm_dp_copy_caps(&connector->dp.source_link_caps, link_caps);
 }
 EXPORT_SYMBOL_GPL(drm_dp_source_set_caps);
 
@@ -4968,9 +4967,6 @@ int drm_dp_read_dpcd_supported_link_rates(struct drm_dp_aux *aux,
 	for (i = 0; i < ARRAY_SIZE(dpcd_link_rates) && dpcd_link_rates[i]; i++)
 		link_rates[i] = le16_to_cpu(dpcd_link_rates[i]) * 20;
 
-	drm_dbg_kms(aux->drm_dev, "%s: SUPPORTED_LINK_RATES: %*ph\n", aux->name,
-		    i, link_rates);
-
 	return i;
 }
 EXPORT_SYMBOL_GPL(drm_dp_read_dpcd_supported_link_rates);
@@ -4979,47 +4975,61 @@ EXPORT_SYMBOL_GPL(drm_dp_read_dpcd_supported_link_rates);
  * drm_dp_read_dpcd_128b132b_supported_link_rates() - read DPCD 128B/132B
  *						      supported link rates
  * @aux: DisplayPort AUX channel
+ * @lttpr_common_caps: LTTPR common capabilities
  * @link_rates: Buffer to store the resulting link rates supported
  *
- * Attempts to read the DPCD 128B/132B supported link rates for @aux.
+ * Attempts to read the DPCD 128B/132B supported link rates for @aux, limited
+ * by the capabilities of the LTTPRs if any is present.
  *
  * Returns: The number or supported link rates, negative error code otherwise.
  */
 int drm_dp_read_dpcd_128b132b_supported_link_rates(struct drm_dp_aux *aux,
+						   const u8 lttpr_caps[DP_LTTPR_COMMON_CAP_SIZE],
 						   int link_rates[DP_MAX_128B132B_SUPPORTED_RATES])
 {
-	int dpcd_link_rates, ret;
-	int i = 0;
-	u8 data;
+	int ret, i = 0;
+	u8 uhbr_rates;
 
-	ret = drm_dp_dpcd_read_byte(aux, DP_128B132B_SUPPORTED_LINK_RATES, &data);
+	ret = drm_dp_dpcd_read_byte(aux, DP_128B132B_SUPPORTED_LINK_RATES,
+				    &uhbr_rates);
 	if (ret < 0)
 		return ret;
 
-	if (data & DP_UHBR10)
-		link_rates[i++] = 1000000;
-	if (data & DP_UHBR13_5)
-		link_rates[i++] = 1350000;
-	if (data & DP_UHBR20)
-		link_rates[i++] = 2000000;
+	if (drm_dp_lttpr_count(lttpr_caps)) {
+		/* We have a repeater */
+		if (lttpr_caps[0] >= 0x20 &&
+		    dp_lttpr_common_cap(lttpr_caps,
+					DP_MAIN_LINK_CHANNEL_CODING_PHY_REPEATER) &
+		    DP_PHY_REPEATER_128B132B_SUPPORTED) {
+			/* Repeater supports 128b/132b, valid UHBR rates */
+			uhbr_rates &= dp_lttpr_common_cap(lttpr_caps,
+							  DP_PHY_REPEATER_128B132B_RATES);
+		} else {
+			/* Does not support 128b/132b */
+			uhbr_rates = 0;
+		}
+	}
 
-	drm_dbg_kms(aux->drm_dev, "%s: 128B/132B_SUPPORTED_LINK_RATES: %*ph\n",
-		    aux->name, i, link_rates);
+	if (uhbr_rates & DP_UHBR10)
+		link_rates[i++] = 1000000;
+	if (uhbr_rates & DP_UHBR13_5)
+		link_rates[i++] = 1350000;
+	if (uhbr_rates & DP_UHBR20)
+		link_rates[i++] = 2000000;
 
 	return i;
 }
 EXPORT_SYMBOL_GPL(drm_dp_read_dpcd_128b132b_supported_link_rates);
 
 /**
- * drm_dp_read_dpcd_dsc() - read DPCD DSC support
+ * drm_dp_read_dsc_support() - read DPCD DSC support
  * @aux: DisplayPort AUX channel
  *
  * Attempts to read the DPCD DSC support for @aux.
  *
- * Returns: 0 if the DPCD was read successfully, negative error code
- * otherwise.
+ * Returns: true if the sink supports DSC decompression, false otherwise.
  */
-bool drm_dp_read_dpcd_read_dsc_support(struct drm_dp_aux *aux)
+bool drm_dp_read_dsc_support(struct drm_dp_aux *aux)
 {
 	int ret;
 	u8 data;
@@ -5028,9 +5038,122 @@ bool drm_dp_read_dpcd_read_dsc_support(struct drm_dp_aux *aux)
 	if (ret < 0)
 		return false;
 
-	return !!(data && DP_DSC_DECOMPRESSION_IS_SUPPORTED);
+	return !!(data & DP_DSC_DECOMPRESSION_IS_SUPPORTED);
 }
-EXPORT_SYMBOL_GPL(drm_dp_read_dpcd_read_dsc_support);
+EXPORT_SYMBOL_GPL(drm_dp_read_dsc_support);
+
+/**
+ * drm_dp_read_dpcd_sink_rates() - read the sink rates from the DPCD
+ * @aux: DisplayPort AUX channel
+ * @dpcd: DPCD receiver capabilities
+ * @lttpr_common_caps: LTTPR common capabilities
+ * @desc: DisplayPort sink descriptor
+ * @sink_rates: Array of DP_MAX_SUPPORTED_RATES entries to store the sink rates
+ *
+ * Read the link rates supported by a DisplayPort sink from the DPCD
+ * DP_MAX_LINK_RATE and DP_128B132B_SUPPORTED_LINK_RATES registers, limited by
+ * the capabilities of the LTTPRs if any is present. The rates are stored in
+ * @sink_rates in ascending order.
+ *
+ * Returns: The number of supported sink rates on success, negative error code
+ * otherwise.
+ */
+int drm_dp_read_dpcd_sink_rates(struct drm_dp_aux *aux,
+				const u8 dpcd[DP_RECEIVER_CAP_SIZE],
+				const u8 lttpr_common_caps[DP_LTTPR_COMMON_CAP_SIZE],
+				const struct drm_dp_desc *desc,
+				int sink_rates[DP_MAX_SUPPORTED_RATES])
+{
+	static const int dp_rates[] = {
+		162000, 270000, 540000, 810000
+	};
+	int max_rate, max_lttpr_rate, ret, i;
+
+	BUILD_BUG_ON(ARRAY_SIZE(dp_rates) + DP_MAX_128B132B_SUPPORTED_RATES >
+		     DP_MAX_SUPPORTED_RATES);
+
+	if (drm_dp_has_quirk(desc, DP_DPCD_QUIRK_CAN_DO_MAX_LINK_RATE_3_24_GBPS)) {
+		/* Needed, e.g., for Apple MBP 2017, 15 inch eDP Retina panel */
+		static const int quirk_rates[] = { 162000, 270000, 324000 };
+
+		memcpy(sink_rates, quirk_rates, sizeof(quirk_rates));
+
+		return ARRAY_SIZE(quirk_rates);
+	}
+
+	/*
+	 * Sink rates for 8b/10b.
+	 */
+	max_rate = drm_dp_bw_code_to_link_rate(dpcd[DP_MAX_LINK_RATE]);
+	max_lttpr_rate = drm_dp_lttpr_max_link_rate(lttpr_common_caps);
+	if (max_lttpr_rate)
+		max_rate = min(max_rate, max_lttpr_rate);
+
+	for (i = 0; i < ARRAY_SIZE(dp_rates); i++) {
+		if (dp_rates[i] > max_rate)
+			break;
+		sink_rates[i] = dp_rates[i];
+	}
+
+	/*
+	 * Sink rates for 128b/132b. If set, sink should support all 8b/10b
+	 * rates and 10 Gbps.
+	 */
+	if (drm_dp_128b132b_supported(dpcd)) {
+		ret = drm_dp_read_dpcd_128b132b_supported_link_rates(aux,
+								     lttpr_common_caps,
+								     &sink_rates[i]);
+		/*
+		 * Use the 8b/10b rates if the read of the DPCD
+		 * DP_128B132B_SUPPORTED_LINK_RATES register failed.
+		 */
+		if (ret < 0)
+			drm_dbg_kms(aux->drm_dev,
+				    "%s: Failed to read DPCD 128B/132B supported link rates (%d)\n",
+				    aux->name, ret);
+		else
+			i += ret;
+	}
+
+	return i;
+}
+EXPORT_SYMBOL_GPL(drm_dp_read_dpcd_sink_rates);
+
+/**
+ * drm_dp_read_edp_sink_rates() - read the sink rates from the eDP DPCD
+ * @aux: DisplayPort AUX channel
+ * @sink_rates: Array of DP_MAX_SUPPORTED_RATES entries to store the sink rates
+ *
+ * Read the link rates supported by an eDP sink from the DPCD
+ * DP_SUPPORTED_LINK_RATES registers, available on eDP 1.4 and later sinks.
+ *
+ * Returns: The number of supported sink rates, 0 if the sink does not support
+ * the DP_SUPPORTED_LINK_RATES register, negative error code otherwise.
+ */
+int drm_dp_read_edp_sink_rates(struct drm_dp_aux *aux,
+			       int sink_rates[DP_MAX_SUPPORTED_RATES])
+{
+	int num_sink_rates, ret;
+	u8 edp_dpcd_rev;
+
+	ret = drm_dp_dpcd_read_byte(aux, DP_EDP_DPCD_REV, &edp_dpcd_rev);
+	if (ret < 0)
+		return ret;
+
+	if (edp_dpcd_rev < DP_EDP_14)
+		return 0;
+
+	num_sink_rates = drm_dp_read_dpcd_supported_link_rates(aux, sink_rates);
+	if (num_sink_rates < 0) {
+		drm_dbg_kms(aux->drm_dev,
+			    "%s: Unable to read eDP supported link rates (%d)\n",
+			    aux->name, num_sink_rates);
+		return 0;
+	}
+
+	return num_sink_rates;
+}
+EXPORT_SYMBOL_GPL(drm_dp_read_edp_sink_rates);
 
 /**
  * drm_dp_sink_set_caps - Set DisplayPort sink link capabilities
@@ -5038,102 +5161,20 @@ EXPORT_SYMBOL_GPL(drm_dp_read_dpcd_read_dsc_support);
  * @link_caps: DisplayPort link training capabilities. The link_rates pointer
  *	       is not kept by the DRM core
  *
- * This function set the DisplayPort sink (monitor) link training
- * capabilities for the given connector. This function let the controller
+ * This function sets the DisplayPort sink (monitor) link training
+ * capabilities for the given connector. This function lets the controller
  * driver read the DPCD on its own, to avoid too many read of the same
  * DPCD data.
  *
- * Returns: 0 if the capabilites was set successfully, negative error code
+ * Returns: 0 if the capabilities were set successfully, negative error code
  * otherwise.
  */
 int drm_dp_sink_set_caps(struct drm_connector *connector,
-			 struct drm_connector_dp_link_caps *link_caps)
+			 const struct drm_connector_dp_link_caps *link_caps)
 {
 	WARN_ON(!drm_modeset_is_locked(&connector->dev->mode_config.connection_mutex));
 
-	return drm_dp_copy_caps(connector->dp.sink_link_caps, link_caps);
-}
-
-/**
- * drm_dp_sink_set_caps - Set DisplayPort sink link capabilities
- * @connector: DisplayPort connector
- * @dpcd_caps: Content of DPCD capabilities
- * @supported_link_rates: DPCD SUPPORTED_LINK_RATES registers.
- *			  NULL if not supported.
- * @uhbr_supported_link_rates: Bitfield content of DPCD 128B/132B_SUPPORTED_LINK_RATES
- *			       register.
- * @dsc: DSC support capabilities
- *
- * This function set the DisplayPort sink (monitor) link training
- * capabilities for the given connector. Let the controller driver read
- * the DPCD on its own, to avoid too many read of the same DPCD data.
- *
- * Returns: 0 if the capabilites was set successfully, negative error code
- * otherwise.
- */
-int _drm_dp_sink_set_caps(struct drm_connector *connector,
-			 u8 dpcd_caps[DP_RECEIVER_CAP_SIZE],
-			 u16 supported_link_rates[DP_MAX_SUPPORTED_RATES],
-			 u8 uhbr_supported_link_rates,
-			 bool dsc)
-{
-	int lane_count, nlink_rates = 0, i = 0;
-	int *link_rates;
-
-	if (!connector)
-		return -ENODEV;
-
-	WARN_ON(!drm_modeset_is_locked(&connector->dev->mode_config.connection_mutex));
-
-	lane_count = dpcd_caps[DP_MAX_LANE_COUNT] & DP_MAX_LANE_COUNT_MASK;
-
-
-
-	for (i = 0; i < ARRAY_SIZE(dp_rates); i++) {
-		if (dp_rates[i] > max_rate)
-			break;
-		intel_dp->sink_rates[i] = dp_rates[i];
-	}
-	/*
-	 * In case supported_link_rates table register is not supported by the
-	 * sink use max link rate for 8b/10b Link Layer.
-	 */
-	if (supported_link_rates || !supported_link_rates[0]) {
-		nlink_rates = 1;
-	} else {
-		for (int j = 0; supported_link_rates[j] && j < DP_MAX_SUPPORTED_RATES; j++)
-			nlink_rates++;
-	}
-
-	uhbr_supported_link_rates &= (DP_UHBR20 | DP_UHBR13_5 | DP_UHBR10);
-	nlink_rates += hweight8(uhbr_supported_link_rates);
-
-	link_rates = kzalloc_objs(*link_rates, nlink_rates);
-	if (!link_rates)
-		return -ENOMEM;
-
-	if (!supported_link_rates || !supported_link_rates[0]) {
-		link_rates[i++] =  drm_dp_bw_code_to_link_rate(dpcd_caps[DP_MAX_LINK_RATE]);
-	} else {
-		for (int j = 0; supported_link_rates[j] && j < DP_MAX_SUPPORTED_RATES; j++)
-			link_rates[i++] = supported_link_rates[j] * 20;
-	}
-
-	if (uhbr_supported_link_rates & DP_UHBR10)
-		link_rates[i++] = 1000000;
-	if (uhbr_supported_link_rates & DP_UHBR13_5)
-		link_rates[i++] = 1350000;
-	if (uhbr_supported_link_rates & DP_UHBR20)
-		link_rates[i] = 2000000;
-
-
-	return 0;
-}
-EXPORT_SYMBOL_GPL(_drm_dp_sink_set_caps);
-
-static int drm_dp_cmp(const void *a, const void *b)
-{
-	return cmp_int(*(const int *)a, *(const int *)b);
+	return drm_dp_copy_caps(&connector->dp.sink_link_caps, link_caps);
 }
 
 /**
@@ -5141,22 +5182,20 @@ static int drm_dp_cmp(const void *a, const void *b)
  * @connector: DisplayPort connector
  * @aux: DisplayPort AUX channel
  *
- * This function fetch the DisplayPort sink (monitor) link cabilities from DPCD
- * and set the value read for a given connector
+ * This function fetches the DisplayPort sink link capabilities from DPCD and
+ * sets them for the given connector.
  *
- * Returns: 0 if the capabilites sync read successfully, negative error code
- * otherwise.
+ * Returns: 0 if the capabilities were fetched and set successfully, negative
+ * error code otherwise.
  */
 int drm_dp_sink_sync_caps(struct drm_connector *connector, struct drm_dp_aux *aux)
 {
-	int supported_link_rates[DP_MAX_SUPPORTED_RATES];
-	u8 lttpr_caps_dpcd[DP_LTTPR_COMMON_CAP_SIZE];
-	struct drm_connector_dp_link_caps link_caps;
+	int sink_rates[DP_MAX_SUPPORTED_RATES];
+	u8 lttpr_common_caps[DP_LTTPR_COMMON_CAP_SIZE];
 	u8 dpcd_caps[DP_RECEIVER_CAP_SIZE];
-	int nsupported_link_rates, ret;
-	struct drm_dp_desc desc = {0};
-	int nlink_rates = 0;
-	bool dsc;
+	struct drm_connector_dp_link_caps link_caps;
+	struct drm_dp_desc desc = {};
+	int num_sink_rates, ret;
 
 	WARN_ON(!drm_modeset_is_locked(&connector->dev->mode_config.connection_mutex));
 
@@ -5164,134 +5203,41 @@ int drm_dp_sink_sync_caps(struct drm_connector *connector, struct drm_dp_aux *au
 	if (ret < 0)
 		return ret;
 
-	ret = drm_dp_read_lttpr_common_caps(aux, dpcd_caps, lttpr_dpcd_caps);
+	ret = drm_dp_read_lttpr_common_caps(aux, dpcd_caps, lttpr_common_caps);
 	if (ret < 0)
 		return ret;
-
-	/*
-	 * Sink rates for 8b/10b.
-	 */
-	if (connector->connector_type == DRM_MODE_CONNECTOR_eDP) {
-		u8 data;
-
-		ret = drm_dp_dpcd_read_byte(aux, DP_EDP_DPCD_REV, data);
-		if (ret < 0)
-			return ret;
-
-		ret = 0;
-		if (data >= DP_EDP_14)
-			ret = drm_edp_read_link_rates_sup(aux, link_rates);
-
-		if (!ret)
-			ret = drm_dp_read_max_link_rates(aux, ;
-
-	} else {
-
-	max_rate = drm_dp_bw_code_to_link_rate(dpcd_caps[DP_MAX_LINK_RATE]);
-	max_lttpr_rate = drm_dp_lttpr_max_link_rate(lttpr_dpcd_caps);
-	if (max_lttpr_rate)
-		max_rate = min(max_rate, max_lttpr_rate);
-
-	int *link_rates _free(kfree) = kmalloc_obj(*link_rates);
-	if (!link_rates)
-		return -ENOMEM;
-
-	nlink_rates++;
 
 	ret = drm_dp_read_desc(aux, &desc, drm_dp_is_branch(dpcd_caps));
 	if (ret)
 		drm_dbg_kms(aux->drm_dev, "%s: error reading descriptor (%d)\n",
 			    aux->name, ret);
 
-	if (drm_dp_has_quirk(&desc, DP_DPCD_QUIRK_CAN_DO_MAX_LINK_RATE_3_24_GBPS &&
-	    max_rate != 324000)) {
-		int *tmp = krealloc_array(link_rates, nlink_rates + 1,
-					  sizeof(*link_rates), GFP_KERNEL);
-		if (!tmp)
-			return -ENOMEM;
+	if (connector->connector_type == DRM_MODE_CONNECTOR_eDP) {
+		num_sink_rates = drm_dp_read_edp_sink_rates(aux, sink_rates);
 
-		tmp[nlink_rates] = 324000;
-		link_rates = tmp;
-		nlink_rates++;
-	}
-
-	ret = drm_dp_read_dpcd_supported_link_rates(aux, supported_link_rates);
-	if (ret > 0) {
-		int *tmp = krealloc_array(link_rates, nlink_rates + ret,
-					  sizeof(*link_rates), GFP_KERNEL);
-		if (!tmp)
-			return -ENOMEM;
-
-		memcpy(tmp + nlink_rates, supported_link_rates, sizeof(*tmp) * ret);
-		link_rates = tmp;
-		nlink_rates += ret;
-	else {
-		drm_dbg_kms(aux->drm_dev, "%s: no pported link rates table.\n",
-			    aux->name);
-	}
-
-	/*
-	 * Sink rates for 128b/132b
-	 */
-	if (drm_dp_128b132b_supported(dpcd_caps)) {
-		u8 uhbr_supported_rates;
-
-		ret = drm_dp_dpcd_read_byte(aux, DP_128B132B_SUPPORTED_LINK_RATES,
-					    &uhbr_supoprted_rates);
-		if (ret < 0)
-			return ret;
-
-		if (drm_dp_lttpr_count(intel_dp->lttpr_common_caps)) {
-			/* We have a repeater */
-			if (intel_dp->lttpr_common_caps[0] >= 0x20 &&
-			    intel_dp->lttpr_common_caps[DP_MAIN_LINK_CHANNEL_CODING_PHY_REPEATER -
-							DP_LT_TUNABLE_PHY_REPEATER_FIELD_DATA_STRUCTURE_REV] &
-			    DP_PHY_REPEATER_128B132B_SUPPORTED) {
-				/* Repeater supports 128b/132b, valid UHBR rates */
-				uhbr_supported_link_rates &= intel_dp->lttpr_common_caps[DP_PHY_REPEATER_128B132B_RATES -
-									  DP_LT_TUNABLE_PHY_REPEATER_FIELD_DATA_STRUCTURE_REV];
-			} else {
-				/* Does not support 128b/132b */
-				uhbr_supported_link_rates = 0;
-			}
-		}
-
-		if (uhbr_supported_link_rates & DP_UHBR10)
-			intel_dp->sink_rates[i++] = 1000000;
-		if (uhbr_supported_link_rates & DP_UHBR13_5)
-			intel_dp->sink_rates[i++] = 1350000;
-		if (uhbr_supported_link_rates & DP_UHBR20)
-			intel_dp->sink_rates[i++] = 2000000;
-
-		int uhbr_supported_link_rates[DP_MAX_128B132B_SUPPORTED_RATES];
-
-		ret = drm_dp_read_dpcd_128b132b_supported_link_rates(aux,
-								     uhbr_supported_link_rates);
-		if (ret > 0) {
-			int *tmp = krealloc_array(link_rates, nlink_rates + ret,
-						  sizeof(*link_rates), GFP_KERNEL);
-			if (!tmp)
-				return -ENOMEM;
-
-			memcpy(tmp + nlink_rates, uhbr_supported_link_rates,
-			       sizeof(*tmp) * ret);
-			link_rates = tmp;
-			nlink_rates += ret;
-		} else {
-			drm_dbg_kms(aux->drm_dev,
-				    "%s: error reading supported 128B/138B link rates: %d\n",
-				    aux->name, ret);
-		}
+		/*
+		 * Use the rates of the DP_MAX_LINK_RATE and
+		 * DP_128B132B_SUPPORTED_LINK_RATES registers if the sink does
+		 * not support the DP_SUPPORTED_LINK_RATES register.
+		 */
+		if (num_sink_rates <= 0)
+			num_sink_rates = drm_dp_read_dpcd_sink_rates(aux, dpcd_caps,
+								     lttpr_common_caps,
+								     &desc,
+								     sink_rates);
 	} else {
-		drm_dbg_kms(aux->drm_dev, "%s: 128B/138B not supported\n",
-			    aux->name);
+		num_sink_rates = drm_dp_read_dpcd_sink_rates(aux, dpcd_caps,
+							     lttpr_common_caps,
+							     &desc,
+							     sink_rates);
 	}
 
-	dsc = drm_dp_read_dpcd_read_dsc_support(aux);
+	link_caps.nlanes = dpcd_caps[DP_MAX_LANE_COUNT] & DP_MAX_LANE_COUNT_MASK;
+	link_caps.nlink_rates = num_sink_rates;
+	link_caps.link_rates = sink_rates;
+	link_caps.dsc = drm_dp_read_dsc_support(aux);
 
-	//sort(dp_rates, ARRAY_SIZE(dp_rates), sizeof(dp_rates[0]), dp_cmp, NULL);
-	kfree(link_rates);
-
+	return drm_dp_sink_set_caps(connector, &link_caps);
 }
 EXPORT_SYMBOL_GPL(drm_dp_sink_sync_caps);
 

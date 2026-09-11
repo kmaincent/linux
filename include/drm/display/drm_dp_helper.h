@@ -1040,11 +1040,8 @@ int drm_dp_link_symbol_cycles(int lane_count, int pixels, int dsc_slice_count,
 int drm_dp_source_set_caps(struct drm_connector *connector,
 			   const struct drm_connector_dp_link_caps *link_caps);
 int drm_dp_sink_sync_caps(struct drm_connector *connector, struct drm_dp_aux *aux);
-int drm_dp_sink_set_caps(struct drm_connector *connector,
-			 u8 dpcd_caps[DP_RECEIVER_CAP_SIZE],
-			 u16 supported_link_rates[DP_MAX_SUPPORTED_RATES],
-			 u8 uhbr_supported_link_rates,
-			 bool dsc);
+void drm_dp_sink_set_caps(struct drm_connector *connector, int nlanes,
+			  int *link_rates, int nlink_rates, bool dsc);
 void drm_dp_sink_reset_caps(struct drm_connector *connector);
 void drm_dp_set_cur_link_params(struct drm_connector *connector, int link_rate,
 				int lane_count, bool dsc_en);

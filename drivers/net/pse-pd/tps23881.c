@@ -186,7 +186,7 @@ static int tps23881_pi_enable(struct pse_controller_dev *pcdev, int id)
 	u16 val;
 	int ret;
 
-	if (id >= TPS238XX_MAX_CHANS)
+	if (id >= pcdev->nr_lines)
 		return -ERANGE;
 
 	chan = priv->port[id].chan[0];
@@ -241,7 +241,7 @@ static int tps23881_pi_disable(struct pse_controller_dev *pcdev, int id)
 	u16 val;
 	int ret;
 
-	if (id >= TPS238XX_MAX_CHANS)
+	if (id >= pcdev->nr_lines)
 		return -ERANGE;
 
 	chan = priv->port[id].chan[0];
@@ -590,7 +590,7 @@ tps23881_get_of_channels(struct tps23881_priv *priv,
 			goto out;
 		}
 
-		if (chan_id >= TPS238XX_MAX_CHANS || chan_node[chan_id]) {
+		if (chan_id >= priv->pcdev.nr_lines || chan_node[chan_id]) {
 			dev_err(&priv->client->dev,
 				"wrong number of port (%d)\n", chan_id);
 			ret = -EINVAL;
@@ -605,7 +605,7 @@ tps23881_get_of_channels(struct tps23881_priv *priv,
 	return 0;
 
 out:
-	for (i = 0; i < TPS238XX_MAX_CHANS; i++) {
+	for (i = 0; i < priv->pcdev.nr_lines; i++) {
 		of_node_put(chan_node[i]);
 		chan_node[i] = NULL;
 	}
@@ -624,13 +624,13 @@ struct tps23881_port_matrix {
 };
 
 static int
-tps23881_match_channel(const struct pse_pi_pairset *pairset,
+tps23881_match_channel(const struct pse_pi_pairset *pairset, int max_chans,
 		       struct device_node *chan_node[TPS238XX_MAX_CHANS])
 {
 	int i;
 
 	/* Look on every channels */
-	for (i = 0; i < TPS238XX_MAX_CHANS; i++) {
+	for (i = 0; i < max_chans; i++) {
 		if (pairset->np == chan_node[i])
 			return i;
 	}
@@ -640,11 +640,11 @@ tps23881_match_channel(const struct pse_pi_pairset *pairset,
 
 static bool
 tps23881_is_chan_free(struct tps23881_port_matrix port_matrix[TPS238XX_MAX_CHANS],
-		      int chan)
+		      int chan, int max_chans)
 {
 	int i;
 
-	for (i = 0; i < TPS238XX_MAX_CHANS; i++) {
+	for (i = 0; i < max_chans; i++) {
 		if (port_matrix[i].exist &&
 		    (port_matrix[i].hw_chan[0] == chan ||
 		    port_matrix[i].hw_chan[1] == chan))
@@ -656,20 +656,22 @@ tps23881_is_chan_free(struct tps23881_port_matrix port_matrix[TPS238XX_MAX_CHANS
 
 /* Fill port matrix with the matching channels */
 static int
-tps23881_match_port_matrix(struct pse_pi *pi, int pi_id,
+tps23881_match_port_matrix(struct tps23881_priv *priv, int pi_id,
 			   struct device_node *chan_node[TPS238XX_MAX_CHANS],
 			   struct tps23881_port_matrix port_matrix[TPS238XX_MAX_CHANS])
 {
+	struct pse_pi *pi = &priv->pcdev.pi[pi_id];
+	int max_chans = priv->pcdev.nr_lines;
 	int ret;
 
 	if (!pi->pairset[0].np)
 		return 0;
 
-	ret = tps23881_match_channel(&pi->pairset[0], chan_node);
+	ret = tps23881_match_channel(&pi->pairset[0], max_chans, chan_node);
 	if (ret < 0)
 		return ret;
 
-	if (!tps23881_is_chan_free(port_matrix, ret)) {
+	if (!tps23881_is_chan_free(port_matrix, ret, max_chans)) {
 		pr_err("tps23881: channel %d already used\n", ret);
 		return -ENODEV;
 	}
@@ -680,11 +682,11 @@ tps23881_match_port_matrix(struct pse_pi *pi, int pi_id,
 	if (!pi->pairset[1].np)
 		return 0;
 
-	ret = tps23881_match_channel(&pi->pairset[1], chan_node);
+	ret = tps23881_match_channel(&pi->pairset[1], max_chans, chan_node);
 	if (ret < 0)
 		return ret;
 
-	if (!tps23881_is_chan_free(port_matrix, ret)) {
+	if (!tps23881_is_chan_free(port_matrix, ret, max_chans)) {
 		pr_err("tps23881: channel %d already used\n", ret);
 		return -ENODEV;
 	}
@@ -702,12 +704,12 @@ tps23881_match_port_matrix(struct pse_pi *pi, int pi_id,
 
 static int
 tps23881_get_unused_chan(struct tps23881_port_matrix port_matrix[TPS238XX_MAX_CHANS],
-			 int port_cnt)
+			 int port_cnt, int max_chans)
 {
 	bool used;
 	int i, j;
 
-	for (i = 0; i < TPS238XX_MAX_CHANS; i++) {
+	for (i = 0; i < max_chans; i++) {
 		used = false;
 
 		for (j = 0; j < port_cnt; j++) {
@@ -738,13 +740,14 @@ tps23881_get_unused_chan(struct tps23881_port_matrix port_matrix[TPS238XX_MAX_CH
  * valid.
  */
 static int
-tps23881_sort_port_matrix(struct tps23881_port_matrix port_matrix[TPS238XX_MAX_CHANS])
+tps23881_sort_port_matrix(struct tps23881_port_matrix port_matrix[TPS238XX_MAX_CHANS],
+			  int max_chans)
 {
 	struct tps23881_port_matrix tmp_port_matrix[TPS238XX_MAX_CHANS] = {0};
 	int i, ret, port_cnt = 0, cnt_4ch_grp1 = 0, cnt_4ch_grp2 = 4;
 
 	/* Configure 4p port matrix */
-	for (i = 0; i < TPS238XX_MAX_CHANS; i++) {
+	for (i = 0; i < max_chans; i++) {
 		int *cnt;
 
 		if (!port_matrix[i].exist || !port_matrix[i].is_4p)
@@ -771,7 +774,7 @@ tps23881_sort_port_matrix(struct tps23881_port_matrix port_matrix[TPS238XX_MAX_C
 	}
 
 	/* Configure 2p port matrix */
-	for (i = 0; i < TPS238XX_MAX_CHANS; i++) {
+	for (i = 0; i < max_chans; i++) {
 		int *cnt;
 
 		if (!port_matrix[i].exist || port_matrix[i].is_4p)
@@ -794,13 +797,14 @@ tps23881_sort_port_matrix(struct tps23881_port_matrix port_matrix[TPS238XX_MAX_C
 	 * channels are unused
 	 */
 	while (cnt_4ch_grp1 < 4) {
-		ret = tps23881_get_unused_chan(tmp_port_matrix, port_cnt);
+		ret = tps23881_get_unused_chan(tmp_port_matrix, port_cnt,
+					       max_chans);
 		if (ret < 0) {
 			pr_err("tps23881: port matrix issue, no chan available\n");
 			return ret;
 		}
 
-		if (port_cnt >= TPS238XX_MAX_CHANS) {
+		if (port_cnt >= max_chans) {
 			pr_err("tps23881: wrong number of channels\n");
 			return -ENODEV;
 		}
@@ -814,13 +818,14 @@ tps23881_sort_port_matrix(struct tps23881_port_matrix port_matrix[TPS238XX_MAX_C
 	 * channels are unused
 	 */
 	while (cnt_4ch_grp2 < 8) {
-		ret = tps23881_get_unused_chan(tmp_port_matrix, port_cnt);
+		ret = tps23881_get_unused_chan(tmp_port_matrix, port_cnt,
+					       max_chans);
 		if (ret < 0) {
 			pr_err("tps23881: port matrix issue, no chan available\n");
 			return -ENODEV;
 		}
 
-		if (port_cnt >= TPS238XX_MAX_CHANS) {
+		if (port_cnt >= max_chans) {
 			pr_err("tps23881: wrong number of channels\n");
 			return -ENODEV;
 		}
@@ -906,7 +911,7 @@ tps23881_set_ports_conf(struct tps23881_priv *priv,
 
 	/* Set port power allocation */
 	val = 0;
-	for (i = 0; i < TPS238XX_MAX_CHANS; i++) {
+	for (i = 0; i < priv->pcdev.nr_lines; i++) {
 		if (!port_matrix[i].exist)
 			continue;
 
@@ -921,7 +926,7 @@ tps23881_set_ports_conf(struct tps23881_priv *priv,
 
 	/* Enable detection and classification */
 	val = 0;
-	for (i = 0; i < TPS238XX_MAX_CHANS; i++) {
+	for (i = 0; i < priv->pcdev.nr_lines; i++) {
 		if (!port_matrix[i].exist)
 			continue;
 
@@ -942,14 +947,14 @@ tps23881_set_ports_matrix(struct tps23881_priv *priv,
 	int i, ret;
 
 	/* Update with values for every PSE PIs */
-	for (i = 0; i < TPS238XX_MAX_CHANS; i++) {
-		ret = tps23881_match_port_matrix(&priv->pcdev.pi[i], i,
+	for (i = 0; i < priv->pcdev.nr_lines; i++) {
+		ret = tps23881_match_port_matrix(priv, i,
 						 chan_node, port_matrix);
 		if (ret)
 			return ret;
 	}
 
-	ret = tps23881_sort_port_matrix(port_matrix);
+	ret = tps23881_sort_port_matrix(port_matrix, priv->pcdev.nr_lines);
 	if (ret < 0)
 		return ret;
 
@@ -975,7 +980,7 @@ static int tps23881_setup_pi_matrix(struct pse_controller_dev *pcdev)
 
 	ret = tps23881_set_ports_matrix(priv, chan_node);
 
-	for (i = 0; i < TPS238XX_MAX_CHANS; i++)
+	for (i = 0; i < priv->pcdev.nr_lines; i++)
 		of_node_put(chan_node[i]);
 
 	return ret;
@@ -1180,7 +1185,7 @@ static void tps23881_set_notifs_helper(struct tps23881_priv *priv,
 	if (!chans)
 		return;
 
-	for (i = 0; i < TPS238XX_MAX_CHANS; i++) {
+	for (i = 0; i < priv->pcdev.nr_lines; i++) {
 		if (!priv->port[i].exist)
 			continue;
 		/* No need to look at the 2nd channel in case of PoE4 as
@@ -1203,7 +1208,7 @@ static void tps23881_irq_event_over_temp(struct tps23881_priv *priv,
 	int i;
 
 	if (reg_val & TPS23881_REG_TSD) {
-		for (i = 0; i < TPS238XX_MAX_CHANS; i++) {
+		for (i = 0; i < priv->pcdev.nr_lines; i++) {
 			if (!priv->port[i].exist)
 				continue;
 
@@ -1264,7 +1269,7 @@ static int tps23881_irq_event_detection(struct tps23881_priv *priv,
 	unsigned long chans;
 
 	chans = tps23881_irq_export_chans_helper(reg_val, 0);
-	for_each_set_bit(i, &chans, TPS238XX_MAX_CHANS) {
+	for_each_set_bit(i, &chans, priv->pcdev.nr_lines) {
 		reg = TPS23881_REG_DISC + (i % 4);
 		ret = i2c_smbus_read_word_data(priv->client, reg);
 		if (ret < 0)
@@ -1293,7 +1298,7 @@ static int tps23881_irq_event_classification(struct tps23881_priv *priv,
 	unsigned long chans;
 
 	chans = tps23881_irq_export_chans_helper(reg_val, 4);
-	for_each_set_bit(i, &chans, TPS238XX_MAX_CHANS) {
+	for_each_set_bit(i, &chans, priv->pcdev.nr_lines) {
 		reg = TPS23881_REG_DISC + (i % 4);
 		ret = i2c_smbus_read_word_data(priv->client, reg);
 		if (ret < 0)

@@ -1049,6 +1049,7 @@ struct tps23881_info {
 	u8 dev_id;	/* device ID and silicon revision */
 	const char *fw_parity_name;	/* parity code firmware file name */
 	const char *fw_sram_name;	/* SRAM code firmware file name */
+	int max_chan;
 	bool reg16;
 };
 
@@ -1062,11 +1063,13 @@ static const struct tps23881_info tps23881_info[] = {
 		.dev_id = 0x22,
 		.fw_parity_name = "ti/tps23881/tps23881-parity-14.bin",
 		.fw_sram_name = "ti/tps23881/tps23881-sram-14.bin",
+		.max_chan = TPS23881_MAX_CHANS,
 		.reg16 = true,
 	},
 	[TPS23881B] = {
 		.dev_id = 0x24,
 		/* skip SRAM load, ROM provides Clause 145 hardware-level support */
+		.max_chan = TPS23881_MAX_CHANS,
 		.reg16 = true,
 	},
 };
@@ -1556,7 +1559,7 @@ static int tps23881_i2c_probe(struct i2c_client *client)
 	priv->pcdev.ops = &tps23881_ops;
 	priv->pcdev.dev = dev;
 	priv->pcdev.types = ETHTOOL_PSE_C33;
-	priv->pcdev.nr_lines = TPS238XX_MAX_CHANS;
+	priv->pcdev.nr_lines = info->max_chan;
 	priv->pcdev.supp_budget_eval_strategies = PSE_BUDGET_EVAL_STRAT_STATIC;
 	ret = devm_pse_controller_register(dev, &priv->pcdev);
 	if (ret) {

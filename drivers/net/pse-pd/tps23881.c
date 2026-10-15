@@ -32,9 +32,8 @@
 #define TPS23881_REG_DISC	0xc
 #define TPS23881_REG_PW_STATUS	0x10
 #define TPS23881_REG_OP_MODE	0x12
-#define TPS23881_REG_DISC_EN	0x13
 #define TPS23881_OP_MODE_SEMIAUTO	0xaaaa
-#define TPS23881_REG_DIS_EN	0x13
+#define TPS23881_REG_DISC_EN	0x13
 #define TPS23881_REG_DET_CLA_EN	0x14
 #define TPS23881_REG_GEN_MASK	0x17
 #define TPS23881_REG_CLCHE	BIT(2)
@@ -50,9 +49,7 @@
 #define TPS23881_REG_4PAIR_POL1	0x2a
 #define TPS23881_REG_INPUT_V	0x2e
 #define TPS23881_REG_CHAN1_A	0x30
-#define TPS23881_REG_CHAN1_V	0x32
 #define TPS23881_REG_FOLDBACK	0x40
-#define TPS23881_REG_TPON	BIT(0)
 #define TPS23881_REG_FWREV	0x41
 #define TPS23881_REG_DEVID	0x43
 #define TPS23881_REG_CHAN1_CLASS	0x4c
@@ -535,7 +532,7 @@ tps23881_pi_get_pw_limit_ranges(struct pse_controller_dev *pcdev, int id,
 	return 1;
 }
 
-/* Parse managers subnode into a array of device node */
+/* Parse channels subnode into a array of device node */
 static int
 tps23881_get_of_channels(struct tps23881_priv *priv,
 			 struct device_node *chan_node[TPS23881_MAX_CHANS])
@@ -872,7 +869,7 @@ tps23881_set_ports_conf(struct tps23881_priv *priv,
 		return ret;
 
 	/* Disable DC disconnect */
-	ret = i2c_smbus_write_word_data(client, TPS23881_REG_DIS_EN, 0x0);
+	ret = i2c_smbus_write_word_data(client, TPS23881_REG_DISC_EN, 0x0);
 	if (ret)
 		return ret;
 

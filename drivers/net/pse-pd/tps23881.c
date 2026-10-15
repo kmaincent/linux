@@ -74,6 +74,9 @@ struct tps23881_priv {
 	struct pse_controller_dev pcdev;
 	struct device_node *np;
 	struct tps23881_port_desc port[TPS238XX_MAX_CHANS];
+	s32 (*i2c_smbus_read_data)(const struct i2c_client *client, u8 command);
+	s32 (*i2c_smbus_write_data)(const struct i2c_client *client, u8 command,
+				    u16 value);
 };
 
 static struct tps23881_priv *to_tps23881_priv(struct pse_controller_dev *pcdev)
@@ -150,12 +153,12 @@ tps23881_pi_set_pw_pol_limit(struct tps23881_priv *priv, int id, u8 pw_pol,
 			reg = TPS23881_REG_4PAIR_POL1 + 1;
 	}
 
-	ret = i2c_smbus_read_word_data(client, reg);
+	ret = priv->i2c_smbus_read_data(client, reg);
 	if (ret < 0)
 		return ret;
 
 	val = tps23881_set_val(ret, chan, 0, 0xff, pw_pol);
-	return i2c_smbus_write_word_data(client, reg, val);
+	return priv->i2c_smbus_write_data(client, reg, val);
 }
 
 static int tps23881_pi_enable_manual_pol(struct tps23881_priv *priv, int id)
@@ -198,18 +201,18 @@ static int tps23881_pi_enable(struct pse_controller_dev *pcdev, int id)
 				       BIT(chan % 4));
 	}
 
-	ret = i2c_smbus_write_word_data(client, TPS23881_REG_PW_EN, val);
+	ret = priv->i2c_smbus_write_data(client, TPS23881_REG_PW_EN, val);
 	if (ret)
 		return ret;
 
 	/* Enable DC disconnect*/
 	chan = priv->port[id].chan[0];
-	ret = i2c_smbus_read_word_data(client, TPS23881_REG_DISC_EN);
+	ret = priv->i2c_smbus_read_data(client, TPS23881_REG_DISC_EN);
 	if (ret < 0)
 		return ret;
 
 	val = tps23881_set_val(ret, chan, 0, BIT(chan % 4), BIT(chan % 4));
-	ret = i2c_smbus_write_word_data(client, TPS23881_REG_DISC_EN, val);
+	ret = priv->i2c_smbus_write_data(client, TPS23881_REG_DISC_EN, val);
 	if (ret)
 		return ret;
 
@@ -253,7 +256,7 @@ static int tps23881_pi_disable(struct pse_controller_dev *pcdev, int id)
 				       BIT(chan % 4));
 	}
 
-	ret = i2c_smbus_write_word_data(client, TPS23881_REG_PW_EN, val);
+	ret = priv->i2c_smbus_write_data(client, TPS23881_REG_PW_EN, val);
 	if (ret)
 		return ret;
 
@@ -265,17 +268,17 @@ static int tps23881_pi_disable(struct pse_controller_dev *pcdev, int id)
 
 	/* Disable DC disconnect*/
 	chan = priv->port[id].chan[0];
-	ret = i2c_smbus_read_word_data(client, TPS23881_REG_DISC_EN);
+	ret = priv->i2c_smbus_read_data(client, TPS23881_REG_DISC_EN);
 	if (ret < 0)
 		return ret;
 
 	val = tps23881_set_val(ret, chan, 0, 0, BIT(chan % 4));
-	ret = i2c_smbus_write_word_data(client, TPS23881_REG_DISC_EN, val);
+	ret = priv->i2c_smbus_write_data(client, TPS23881_REG_DISC_EN, val);
 	if (ret)
 		return ret;
 
 	/* Enable detection and classification */
-	ret = i2c_smbus_read_word_data(client, TPS23881_REG_DET_CLA_EN);
+	ret = priv->i2c_smbus_read_data(client, TPS23881_REG_DET_CLA_EN);
 	if (ret < 0)
 		return ret;
 
@@ -291,7 +294,7 @@ static int tps23881_pi_disable(struct pse_controller_dev *pcdev, int id)
 				       BIT(chan % 4));
 	}
 
-	ret = i2c_smbus_write_word_data(client, TPS23881_REG_DET_CLA_EN, val);
+	ret = priv->i2c_smbus_write_data(client, TPS23881_REG_DET_CLA_EN, val);
 	if (ret)
 		return ret;
 
@@ -309,7 +312,7 @@ tps23881_pi_get_admin_state(struct pse_controller_dev *pcdev, int id,
 	u16 val;
 	int ret;
 
-	ret = i2c_smbus_read_word_data(client, TPS23881_REG_PW_STATUS);
+	ret = priv->i2c_smbus_read_data(client, TPS23881_REG_PW_STATUS);
 	if (ret < 0)
 		return ret;
 
@@ -345,7 +348,7 @@ tps23881_pi_get_pw_status(struct pse_controller_dev *pcdev, int id,
 	u16 val;
 	int ret;
 
-	ret = i2c_smbus_read_word_data(client, TPS23881_REG_PW_STATUS);
+	ret = priv->i2c_smbus_read_data(client, TPS23881_REG_PW_STATUS);
 	if (ret < 0)
 		return ret;
 
@@ -377,7 +380,7 @@ static int tps23881_pi_get_voltage(struct pse_controller_dev *pcdev, int id)
 	int ret;
 	u64 uV;
 
-	ret = i2c_smbus_read_word_data(client, TPS23881_REG_INPUT_V);
+	ret = priv->i2c_smbus_read_data(client, TPS23881_REG_INPUT_V);
 	if (ret < 0)
 		return ret;
 
@@ -396,7 +399,7 @@ tps23881_pi_get_chan_current(struct tps23881_priv *priv, u8 chan)
 
 	/* Registers 0x30 to 0x3d */
 	reg = TPS23881_REG_CHAN1_A + (chan % 4) * 4 + (chan >= 4);
-	ret = i2c_smbus_read_word_data(client, reg);
+	ret = priv->i2c_smbus_read_data(client, reg);
 	if (ret < 0)
 		return ret;
 
@@ -436,7 +439,7 @@ static int tps23881_pi_get_pw_class(struct pse_controller_dev *pcdev,
 
 	chan = priv->port[id].chan[0];
 	reg = TPS23881_REG_CHAN1_CLASS + (chan % 4);
-	ret = i2c_smbus_read_word_data(client, reg);
+	ret = priv->i2c_smbus_read_data(client, reg);
 	if (ret < 0)
 		return ret;
 
@@ -488,7 +491,7 @@ tps23881_pi_get_pw_limit_chan(struct tps23881_priv *priv, u8 chan)
 	u16 val;
 
 	reg = TPS23881_REG_2PAIR_POL1 + (chan % 4);
-	ret = i2c_smbus_read_word_data(client, reg);
+	ret = priv->i2c_smbus_read_data(client, reg);
 	if (ret < 0)
 		return ret;
 
@@ -887,7 +890,7 @@ tps23881_write_port_matrix(struct tps23881_priv *priv,
 	}
 
 	/* Write hardware ports matrix */
-	return i2c_smbus_write_word_data(client, TPS23881_REG_PORT_MAP, val);
+	return priv->i2c_smbus_write_data(client, TPS23881_REG_PORT_MAP, val);
 }
 
 static int
@@ -899,13 +902,13 @@ tps23881_set_ports_conf(struct tps23881_priv *priv,
 	u16 val;
 
 	/* Set operating mode */
-	ret = i2c_smbus_write_word_data(client, TPS23881_REG_OP_MODE,
+	ret = priv->i2c_smbus_write_data(client, TPS23881_REG_OP_MODE,
 					TPS23881_OP_MODE_SEMIAUTO);
 	if (ret)
 		return ret;
 
 	/* Disable DC disconnect */
-	ret = i2c_smbus_write_word_data(client, TPS23881_REG_DISC_EN, 0x0);
+	ret = priv->i2c_smbus_write_data(client, TPS23881_REG_DISC_EN, 0x0);
 	if (ret)
 		return ret;
 
@@ -920,7 +923,7 @@ tps23881_set_ports_conf(struct tps23881_priv *priv,
 		else
 			val |= 0x3 << ((port_matrix[i].lgcl_chan[0] / 2) * 4);
 	}
-	ret = i2c_smbus_write_word_data(client, TPS23881_REG_PORT_POWER, val);
+	ret = priv->i2c_smbus_write_data(client, TPS23881_REG_PORT_POWER, val);
 	if (ret)
 		return ret;
 
@@ -936,7 +939,7 @@ tps23881_set_ports_conf(struct tps23881_priv *priv,
 			val |= BIT(port_matrix[i].lgcl_chan[1]) |
 			       BIT(port_matrix[i].lgcl_chan[1] + 4);
 	}
-	return i2c_smbus_write_word_data(client, TPS23881_REG_DET_CLA_EN, val);
+	return priv->i2c_smbus_write_data(client, TPS23881_REG_DET_CLA_EN, val);
 }
 
 static int
@@ -1019,7 +1022,7 @@ static int tps23881_pi_get_pw_req(struct pse_controller_dev *pcdev, int id)
 
 	chan = priv->port[id].chan[0];
 	reg = TPS23881_REG_DISC + (chan % 4);
-	ret = i2c_smbus_read_word_data(client, reg);
+	ret = priv->i2c_smbus_read_data(client, reg);
 	if (ret < 0)
 		return ret;
 
@@ -1046,6 +1049,7 @@ struct tps23881_info {
 	u8 dev_id;	/* device ID and silicon revision */
 	const char *fw_parity_name;	/* parity code firmware file name */
 	const char *fw_sram_name;	/* SRAM code firmware file name */
+	bool reg16;
 };
 
 enum tps23881_model {
@@ -1058,10 +1062,12 @@ static const struct tps23881_info tps23881_info[] = {
 		.dev_id = 0x22,
 		.fw_parity_name = "ti/tps23881/tps23881-parity-14.bin",
 		.fw_sram_name = "ti/tps23881/tps23881-sram-14.bin",
+		.reg16 = true,
 	},
 	[TPS23881B] = {
 		.dev_id = 0x24,
 		/* skip SRAM load, ROM provides Clause 145 hardware-level support */
+		.reg16 = true,
 	},
 };
 
@@ -1271,7 +1277,7 @@ static int tps23881_irq_event_detection(struct tps23881_priv *priv,
 	chans = tps23881_irq_export_chans_helper(reg_val, 0);
 	for_each_set_bit(i, &chans, priv->pcdev.nr_lines) {
 		reg = TPS23881_REG_DISC + (i % 4);
-		ret = i2c_smbus_read_word_data(priv->client, reg);
+		ret = priv->i2c_smbus_read_data(priv->client, reg);
 		if (ret < 0)
 			return ret;
 
@@ -1300,7 +1306,7 @@ static int tps23881_irq_event_classification(struct tps23881_priv *priv,
 	chans = tps23881_irq_export_chans_helper(reg_val, 4);
 	for_each_set_bit(i, &chans, priv->pcdev.nr_lines) {
 		reg = TPS23881_REG_DISC + (i % 4);
-		ret = i2c_smbus_read_word_data(priv->client, reg);
+		ret = priv->i2c_smbus_read_data(priv->client, reg);
 		if (ret < 0)
 			return ret;
 
@@ -1328,7 +1334,7 @@ static int tps23881_irq_event_handler(struct tps23881_priv *priv, u16 reg,
 	 * the one from the first byte.
 	 */
 	if (reg & TPS23881_REG_IT_SUPF) {
-		ret = i2c_smbus_read_word_data(client, TPS23881_REG_SUPF_EVENT);
+		ret = priv->i2c_smbus_read_data(client, TPS23881_REG_SUPF_EVENT);
 		if (ret < 0)
 			return ret;
 		tps23881_irq_event_over_temp(priv, ret, notifs, notifs_mask);
@@ -1336,7 +1342,7 @@ static int tps23881_irq_event_handler(struct tps23881_priv *priv, u16 reg,
 
 	if (reg & (TPS23881_REG_IT_IFAULT | TPS23881_REG_IT_IFAULT << 8 |
 		   TPS23881_REG_IT_DISF | TPS23881_REG_IT_DISF << 8)) {
-		ret = i2c_smbus_read_word_data(client, TPS23881_REG_FAULT);
+		ret = priv->i2c_smbus_read_data(client, TPS23881_REG_FAULT);
 		if (ret < 0)
 			return ret;
 		ret = tps23881_irq_event_over_current(priv, ret, notifs,
@@ -1349,7 +1355,7 @@ static int tps23881_irq_event_handler(struct tps23881_priv *priv, u16 reg,
 
 	if (reg & (TPS23881_REG_IT_DETC | TPS23881_REG_IT_DETC << 8 |
 		   TPS23881_REG_IT_CLASC | TPS23881_REG_IT_CLASC << 8)) {
-		ret = i2c_smbus_read_word_data(client, TPS23881_REG_DET_EVENT);
+		ret = priv->i2c_smbus_read_data(client, TPS23881_REG_DET_EVENT);
 		if (ret < 0)
 			return ret;
 
@@ -1376,7 +1382,7 @@ static int tps23881_irq_handler(int irq, struct pse_controller_dev *pcdev,
 	int ret, it_mask, retry;
 
 	/* Get interruption mask */
-	ret = i2c_smbus_read_word_data(client, TPS23881_REG_IT_MASK);
+	ret = priv->i2c_smbus_read_data(client, TPS23881_REG_IT_MASK);
 	if (ret < 0)
 		return ret;
 	it_mask = ret;
@@ -1389,7 +1395,7 @@ static int tps23881_irq_handler(int irq, struct pse_controller_dev *pcdev,
 			return -ETIMEDOUT;
 		}
 
-		ret = i2c_smbus_read_word_data(client, TPS23881_REG_IT);
+		ret = priv->i2c_smbus_read_data(client, TPS23881_REG_IT);
 		if (ret < 0)
 			return ret;
 
@@ -1426,28 +1432,35 @@ static int tps23881_setup_irq(struct tps23881_priv *priv, int irq)
 	      TPS23881_REG_IT_DETC | TPS23881_REG_IT_CLASC |
 	      TPS23881_REG_IT_DISF;
 	val |= val << 8;
-	ret = i2c_smbus_write_word_data(client, TPS23881_REG_IT_MASK, val);
+	ret = priv->i2c_smbus_write_data(client, TPS23881_REG_IT_MASK, val);
 	if (ret)
 		return ret;
 
-	ret = i2c_smbus_read_word_data(client, TPS23881_REG_GEN_MASK);
+	ret = priv->i2c_smbus_read_data(client, TPS23881_REG_GEN_MASK);
 	if (ret < 0)
 		return ret;
 
 	val = TPS23881_REG_INTEN | TPS23881_REG_CLCHE | TPS23881_REG_DECHE;
 	val |= val << 8;
 	val |= (u16)ret;
-	ret = i2c_smbus_write_word_data(client, TPS23881_REG_GEN_MASK, val);
+	ret = priv->i2c_smbus_write_data(client, TPS23881_REG_GEN_MASK, val);
 	if (ret < 0)
 		return ret;
 
 	/* Reset interrupts registers */
-	ret = i2c_smbus_write_word_data(client, TPS23881_REG_RESET,
+	ret = priv->i2c_smbus_write_data(client, TPS23881_REG_RESET,
 					TPS23881_REG_CLRAIN);
 	if (ret < 0)
 		return ret;
 
 	return devm_pse_irq_helper(&priv->pcdev, irq, 0, &irq_desc);
+}
+
+static s32
+tps23861_i2c_smbus_write_byte_data(const struct i2c_client *client, u8 command,
+				   u16 value)
+{
+	return i2c_smbus_write_byte_data(client, command, (u8)value);
 }
 
 static int tps23881_i2c_probe(struct i2c_client *client)
@@ -1517,15 +1530,23 @@ static int tps23881_i2c_probe(struct i2c_client *client)
 	dev_info(&client->dev, "Firmware revision 0x%x%s\n", ret,
 		 ret == 0x00 ? " (ROM firmware)" : "");
 
-	/* Set configuration B, 16 bit access on a single device address */
-	ret = i2c_smbus_read_byte_data(client, TPS23881_REG_GEN_MASK);
-	if (ret < 0)
-		return ret;
+	if (info->reg16) {
+		/* Set configuration B, 16 bit access on a single device address */
+		ret = i2c_smbus_read_byte_data(client, TPS23881_REG_GEN_MASK);
+		if (ret < 0)
+			return ret;
 
-	val = ret | TPS23881_REG_NBITACC;
-	ret = i2c_smbus_write_byte_data(client, TPS23881_REG_GEN_MASK, val);
-	if (ret)
-		return ret;
+		val = ret | TPS23881_REG_NBITACC;
+		ret = i2c_smbus_write_byte_data(client, TPS23881_REG_GEN_MASK, val);
+		if (ret)
+			return ret;
+
+		priv->i2c_smbus_read_data = i2c_smbus_read_word_data;
+		priv->i2c_smbus_write_data = i2c_smbus_write_word_data;
+	} else {
+		priv->i2c_smbus_read_data = i2c_smbus_read_byte_data;
+		priv->i2c_smbus_write_data = tps23861_i2c_smbus_write_byte_data;
+	}
 
 	priv->client = client;
 	i2c_set_clientdata(client, priv);

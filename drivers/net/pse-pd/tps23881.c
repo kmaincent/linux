@@ -260,7 +260,7 @@ static int tps23881_pi_disable(struct pse_controller_dev *pcdev, int id)
 	 * configured again. According to the datasheet "It may take upwards
 	 * of 5ms after PWOFFn command for all register values to be updated"
 	 */
-	mdelay(5);
+	fsleep(5000);
 
 	/* Disable DC disconnect*/
 	chan = priv->port[id].chan[0];
@@ -986,7 +986,7 @@ static int tps23881_pi_get_pw_req(struct pse_controller_dev *pcdev, int id)
 
 	/* For a 4-pair the classification need 5ms to be completed */
 	if (priv->port[id].is_4p)
-		mdelay(5);
+		fsleep(5000);
 
 	chan = priv->port[id].chan[0];
 	reg = TPS23881_REG_DISC + (chan % 4);
@@ -1125,7 +1125,7 @@ static int tps23881_flash_sram_fw(struct i2c_client *client,
 	if (ret)
 		return ret;
 
-	mdelay(12);
+	fsleep(12000);
 
 	return 0;
 }

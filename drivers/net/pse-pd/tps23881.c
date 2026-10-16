@@ -16,6 +16,7 @@
 #include <linux/pse-pd/pse.h>
 
 #define TPS23881_MAX_CHANS 8
+#define TPS23861_MAX_CHANS 4
 #define TPS238XX_MAX_CHANS TPS23881_MAX_CHANS
 #define TPS23881_MAX_IRQ_RETRIES 10
 
@@ -44,12 +45,16 @@
 #define TPS23881_REG_PW_EN	0x19
 #define TPS23881_REG_RESET	0x1a
 #define TPS23881_REG_CLRAIN	BIT(7)
+// No 23861
 #define TPS23881_REG_2PAIR_POL1	0x1e
 #define TPS23881_REG_PORT_MAP	0x26
+// No 23861
 #define TPS23881_REG_PORT_POWER	0x29
+// No 23861
 #define TPS23881_REG_4PAIR_POL1	0x2a
 #define TPS23881_REG_INPUT_V	0x2e
 #define TPS23881_REG_CHAN1_A	0x30
+// No 23861
 #define TPS23881_REG_FOLDBACK	0x40
 #define TPS23881_REG_FWREV	0x41
 #define TPS23881_REG_DEVID	0x43
@@ -62,11 +67,21 @@
 #define TPS23881_MW_STEP	500
 #define TPS23881_MIN_PI_PW_LIMIT_MW	2000
 
+#define TPS23861_REG_ICUT_POL	0x2a
+
 struct tps23881_port_desc {
 	u8 chan[2];
 	bool is_4p;
-	int pw_pol;
+	union {
+		int pw_pol;
+		int current_pol;
+	};
 	bool exist;
+};
+
+enum tps238xx_policy {
+	POWER_POLICY,
+	CURRENT_POLICY,
 };
 
 struct tps23881_priv {
@@ -77,6 +92,10 @@ struct tps23881_priv {
 	s32 (*i2c_smbus_read_data)(const struct i2c_client *client, u8 command);
 	s32 (*i2c_smbus_write_data)(const struct i2c_client *client, u8 command,
 				    u16 value);
+	enum tps238xx_policy pol;
+	bool reg16;
+	bool no_poe4;
+	bool no_hw_port_matrix;
 };
 
 static struct tps23881_priv *to_tps23881_priv(struct pse_controller_dev *pcdev)
@@ -181,6 +200,26 @@ static int tps23881_pi_enable_manual_pol(struct tps23881_priv *priv, int id)
 	return i2c_smbus_write_byte_data(client, TPS23881_REG_FOLDBACK, val);
 }
 
+static int
+tps23861_pi_set_current_pol_limit(struct tps23881_priv *priv, int id,
+				  u8 current_pol)
+{
+	struct i2c_client *client = priv->client;
+	int ret, reg;
+	u16 val;
+	u8 chan;
+
+	chan = priv->port[id].chan[0];
+	reg = TPS23861_REG_ICUT_POL + (chan / 2);
+
+	ret = priv->i2c_smbus_read_data(client, reg);
+	if (ret < 0)
+		return ret;
+
+	val = tps23881_set_val(ret, chan, (chan % 2) * 4, 0x7, current_pol);
+	return priv->i2c_smbus_write_data(client, reg, val);
+}
+
 static int tps23881_pi_enable(struct pse_controller_dev *pcdev, int id)
 {
 	struct tps23881_priv *priv = to_tps23881_priv(pcdev);
@@ -234,6 +273,18 @@ static int tps23881_pi_conf_pw_pol_limit(struct tps23881_priv *priv, int id)
 	/* Set power policy */
 	return tps23881_pi_set_pw_pol_limit(priv, id, priv->port[id].pw_pol,
 					    priv->port[id].is_4p);
+}
+
+static int
+tps23881_pi_conf_current_pol_limit(struct tps23881_priv *priv, int id)
+{
+	/* No power policy */
+	if (priv->port[id].current_pol < 0)
+		return 0;
+
+	/* Set power policy */
+	return tps23861_pi_set_current_pol_limit(priv, id,
+						 priv->port[id].current_pol);
 }
 
 static int tps23881_pi_disable(struct pse_controller_dev *pcdev, int id)
@@ -298,7 +349,12 @@ static int tps23881_pi_disable(struct pse_controller_dev *pcdev, int id)
 	if (ret)
 		return ret;
 
-	return tps23881_pi_conf_pw_pol_limit(priv, id);
+	if (priv->pol == CURRENT_POLICY)
+		ret = tps23881_pi_conf_current_pol_limit(priv, id);
+	else
+		ret = tps23881_pi_conf_pw_pol_limit(priv, id);
+
+	return ret;
 }
 
 static int
@@ -380,11 +436,27 @@ static int tps23881_pi_get_voltage(struct pse_controller_dev *pcdev, int id)
 	int ret;
 	u64 uV;
 
-	ret = priv->i2c_smbus_read_data(client, TPS23881_REG_INPUT_V);
-	if (ret < 0)
-		return ret;
+	if (priv->reg16) {
+		ret = priv->i2c_smbus_read_data(client, TPS23881_REG_INPUT_V);
+		if (ret < 0)
+			return ret;
 
-	uV = ret & 0x3fff;
+		uV = ret & 0x3fff;
+	} else {
+		ret = priv->i2c_smbus_read_data(client, TPS23881_REG_INPUT_V);
+		if (ret < 0)
+			return ret;
+
+		uV = ret;
+
+		ret = priv->i2c_smbus_read_data(client,
+						TPS23881_REG_INPUT_V + 1);
+		if (ret < 0)
+			return ret;
+
+		uV |= (ret & 0x3f) << 8;
+	}
+
 	uV *= TPS23881_UV_STEP;
 
 	return (int)uV;
@@ -399,11 +471,25 @@ tps23881_pi_get_chan_current(struct tps23881_priv *priv, u8 chan)
 
 	/* Registers 0x30 to 0x3d */
 	reg = TPS23881_REG_CHAN1_A + (chan % 4) * 4 + (chan >= 4);
-	ret = priv->i2c_smbus_read_data(client, reg);
-	if (ret < 0)
-		return ret;
+	if (priv->reg16) {
+		ret = priv->i2c_smbus_read_data(client, reg);
+		if (ret < 0)
+			return ret;
 
-	tmp_64 = ret & 0x3fff;
+		tmp_64 = ret & 0x3fff;
+	} else {
+		ret = priv->i2c_smbus_read_data(client, reg);
+		if (ret < 0)
+			return ret;
+
+		tmp_64 = ret;
+
+		ret = priv->i2c_smbus_read_data(client, reg);
+		if (ret < 0)
+			return ret;
+
+		tmp_64 |= (ret & 0x3f) << 8;
+	}
 	tmp_64 *= TPS23881_NA_STEP;
 	/* uA = nA / 1000 */
 	tmp_64 = DIV_ROUND_CLOSEST_ULL(tmp_64, 1000);
@@ -445,6 +531,28 @@ static int tps23881_pi_get_pw_class(struct pse_controller_dev *pcdev,
 
 	ret = tps23881_calc_val(ret, chan, 4, 0x0f);
 	if (ret >= ARRAY_SIZE(tps23881_class_table))
+		return -ERANGE;
+
+	return tps23881_class_table[ret];
+}
+
+static int tps23861_pi_get_pw_class(struct pse_controller_dev *pcdev,
+				    int id)
+{
+	struct tps23881_priv *priv = to_tps23881_priv(pcdev);
+	struct i2c_client *client = priv->client;
+	int ret, reg;
+	u8 chan;
+
+	chan = priv->port[id].chan[0];
+	reg = TPS23881_REG_DISC + chan;
+	ret = priv->i2c_smbus_read_data(client, reg);
+	if (ret < 0)
+		return ret;
+
+	ret = tps23881_calc_val(ret, chan, 4, 0x0f);
+	/* There is no upper class than class 4 in Clause 33 */
+	if (ret >= 0x8)
 		return -ERANGE;
 
 	return tps23881_class_table[ret];
@@ -566,6 +674,106 @@ tps23881_pi_get_pw_limit_ranges(struct pse_controller_dev *pcdev, int id,
 	return 1;
 }
 
+static int tps23881_icut_table[] = {
+	374,
+	110,
+	204,
+	374,
+	754,
+	592,
+	645,
+	920,
+};
+
+static int
+tps23861_pi_get_pw_limit_ranges(struct pse_controller_dev *pcdev, int id,
+				struct pse_pw_limit_ranges *pw_limit_ranges)
+{
+	struct ethtool_c33_pse_pw_limit_range *c33_pw_limit_ranges;
+	int ret, uV;
+
+	c33_pw_limit_ranges = kzalloc_objs(*c33_pw_limit_ranges,
+					   ARRAY_SIZE(tps23881_icut_table));
+	if (!c33_pw_limit_ranges)
+		return -ENOMEM;
+
+	ret = tps23881_pi_get_voltage(pcdev, id);
+	if (ret < 0)
+		return ret;
+	uV = ret;
+
+	for (int i = 0; i < ARRAY_SIZE(tps23881_icut_table); i++) {
+		u64 tmp_64;
+		int mW;
+
+		tmp_64 = uV;
+		tmp_64 *= tps23881_icut_table[i];
+		/* mW = uV * mA / 1000000 */
+		mW = DIV_ROUND_CLOSEST_ULL(tmp_64, 1000000);
+		c33_pw_limit_ranges->min = mW;
+		c33_pw_limit_ranges->max = mW;
+	}
+
+	pw_limit_ranges->c33_pw_limit_ranges = c33_pw_limit_ranges;
+
+	/* Return the number of ranges */
+	return ARRAY_SIZE(tps23881_icut_table);
+}
+
+static int tps23861_pi_get_pw_limit(struct pse_controller_dev *pcdev, int id)
+{
+	struct tps23881_priv *priv = to_tps23881_priv(pcdev);
+	struct i2c_client *client = priv->client;
+	int ret, reg, uV;
+	u64 tmp_64;
+	u16 val;
+	u8 chan;
+
+	ret = tps23881_pi_get_voltage(pcdev, id);
+	if (ret < 0)
+		return ret;
+	uV = ret;
+
+	chan = priv->port[id].chan[0];
+	reg = TPS23861_REG_ICUT_POL + (chan / 2);
+	ret = priv->i2c_smbus_read_data(client, reg);
+	if (ret < 0)
+		return ret;
+
+	val = tps23881_calc_val(ret, chan, (chan % 2) * 4 , 0x7);
+	if (val > ARRAY_SIZE(tps23881_icut_table))
+		return -ERANGE;
+
+	tmp_64 = tps23881_icut_table[val];
+	tmp_64 *= uV;
+	/* mW = uV * mA / 1000000 */
+	return DIV_ROUND_CLOSEST_ULL(tmp_64, 1000000);
+}
+
+static int tps23861_pi_set_pw_limit(struct pse_controller_dev *pcdev,
+				    int id, int max_mW)
+{
+	struct tps23881_priv *priv = to_tps23881_priv(pcdev);
+	int ret, reg, uV;
+	u64 tmp_64;
+	u8 pw_pol;
+	int ret;
+
+	//TODO
+	if (max_mW < TPS23881_MIN_PI_PW_LIMIT_MW || MAX_PI_PW < max_mW) {
+		dev_err(&priv->client->dev,
+			"power limit %d out of ranges [%d,%d]",
+			max_mW, TPS23881_MIN_PI_PW_LIMIT_MW, MAX_PI_PW);
+		return -ERANGE;
+	}
+
+	pw_pol = DIV_ROUND_CLOSEST_ULL(max_mW, TPS23881_MW_STEP);
+
+	/* Save power policy to reconfigure it after a disabled call */
+	priv->port[id].pw_pol = pw_pol;
+	return tps23861_pi_set_current_pol_limit(priv, id, pw_pol);
+}
+
 /* Parse channels subnode into a array of device node */
 static int
 tps23881_get_of_channels(struct tps23881_priv *priv,
@@ -684,6 +892,11 @@ tps23881_match_port_matrix(struct tps23881_priv *priv, int pi_id,
 
 	if (!pi->pairset[1].np)
 		return 0;
+
+	if (priv->no_poe4) {
+		pr_err("tps238xx: Does not support PoE4\n", ret);
+		return -EOPNOTSUPP;
+	}
 
 	ret = tps23881_match_channel(&pi->pairset[1], max_chans, chan_node);
 	if (ret < 0)
@@ -867,8 +1080,14 @@ tps23881_write_port_matrix(struct tps23881_priv *priv,
 			priv->port[pi_id].exist = true;
 		}
 
-		/* Initialize power policy internal value */
-		priv->port[pi_id].pw_pol = -1;
+		/* Initialize power and current policy internal value */
+		if (priv->pol == CURRENT_POLICY)
+			priv->port[pi_id].current_pol = -1;
+		else
+			priv->port[pi_id].pw_pol = -1;
+
+		if (priv->no_hw_port_matrix)
+			continue;
 
 		/* Set hardware port matrix for all ports */
 		val |= hw_chan << (lgcl_chan * 2);
@@ -888,6 +1107,9 @@ tps23881_write_port_matrix(struct tps23881_priv *priv,
 		/* Set hardware port matrix for all ports */
 		val |= hw_chan << (lgcl_chan * 2);
 	}
+
+	if (priv->no_hw_port_matrix)
+		return 0;
 
 	/* Write hardware ports matrix */
 	return priv->i2c_smbus_write_data(client, TPS23881_REG_PORT_MAP, val);
@@ -913,19 +1135,21 @@ tps23881_set_ports_conf(struct tps23881_priv *priv,
 		return ret;
 
 	/* Set port power allocation */
-	val = 0;
-	for (i = 0; i < priv->pcdev.nr_lines; i++) {
-		if (!port_matrix[i].exist)
-			continue;
+	if (priv->pol == POWER_POLICY) {
+		val = 0;
+		for (i = 0; i < priv->pcdev.nr_lines; i++) {
+			if (!port_matrix[i].exist)
+				continue;
 
-		if (port_matrix[i].is_4p)
-			val |= 0xf << ((port_matrix[i].lgcl_chan[0] / 2) * 4);
-		else
-			val |= 0x3 << ((port_matrix[i].lgcl_chan[0] / 2) * 4);
+			if (port_matrix[i].is_4p)
+				val |= 0xf << ((port_matrix[i].lgcl_chan[0] / 2) * 4);
+			else
+				val |= 0x3 << ((port_matrix[i].lgcl_chan[0] / 2) * 4);
+		}
+		ret = priv->i2c_smbus_write_data(client, TPS23881_REG_PORT_POWER, val);
+		if (ret)
+			return ret;
 	}
-	ret = priv->i2c_smbus_write_data(client, TPS23881_REG_PORT_POWER, val);
-	if (ret)
-		return ret;
 
 	/* Enable detection and classification */
 	val = 0;
@@ -957,9 +1181,17 @@ tps23881_set_ports_matrix(struct tps23881_priv *priv,
 			return ret;
 	}
 
-	ret = tps23881_sort_port_matrix(port_matrix, priv->pcdev.nr_lines);
-	if (ret < 0)
-		return ret;
+	if (priv->no_hw_port_matrix) {
+		for (i = 0; i < priv->pcdev.nr_lines; i++) {
+			port_matrix[i].lgcl_chan[0] = port_matrix[i].hw_chan[0];
+			port_matrix[i].lgcl_chan[1] = port_matrix[i].hw_chan[1];
+		}
+	} else {
+		ret = tps23881_sort_port_matrix(port_matrix,
+						priv->pcdev.nr_lines);
+		if (ret < 0)
+			return ret;
+	}
 
 	ret = tps23881_write_port_matrix(priv, port_matrix, ret);
 	if (ret)
@@ -1027,6 +1259,11 @@ static int tps23881_pi_get_pw_req(struct pse_controller_dev *pcdev, int id)
 		return ret;
 
 	val = tps23881_calc_val(ret, chan, 4, 0xf);
+
+	/* There is no upper class than class 4 in Clause 33 */
+	if (priv->no_poe4 && val >= 0x8)
+		return -ERANGE;
+
 	return tps23881_power_class_table[val];
 }
 
@@ -1045,17 +1282,36 @@ static const struct pse_controller_ops tps23881_ops = {
 	.pi_get_pw_req = tps23881_pi_get_pw_req,
 };
 
+static const struct pse_controller_ops tps23861_ops = {
+	.setup_pi_matrix = tps23881_setup_pi_matrix,
+	.pi_enable = tps23881_pi_enable,
+	.pi_disable = tps23881_pi_disable,
+	.pi_get_admin_state = tps23881_pi_get_admin_state,
+	.pi_get_pw_status = tps23881_pi_get_pw_status,
+	.pi_get_pw_class = tps23861_pi_get_pw_class,
+	.pi_get_actual_pw = tps23881_pi_get_actual_pw,
+	.pi_get_voltage = tps23881_pi_get_voltage,
+	.pi_get_pw_limit = tps23861_pi_get_pw_limit,
+	.pi_set_pw_limit = tps23861_pi_set_pw_limit,
+	.pi_get_pw_limit_ranges = tps23861_pi_get_pw_limit_ranges,
+	.pi_get_pw_req = tps23881_pi_get_pw_req,
+};
+
 struct tps23881_info {
 	u8 dev_id;	/* device ID and silicon revision */
 	const char *fw_parity_name;	/* parity code firmware file name */
 	const char *fw_sram_name;	/* SRAM code firmware file name */
+	const struct pse_controller_ops *pse_ops;
 	int max_chan;
+	bool no_poe4;
 	bool reg16;
+	enum tps238xx_policy pol;
 };
 
 enum tps23881_model {
 	TPS23881,
 	TPS23881B,
+	TPS23861,
 };
 
 static const struct tps23881_info tps23881_info[] = {
@@ -1064,13 +1320,25 @@ static const struct tps23881_info tps23881_info[] = {
 		.fw_parity_name = "ti/tps23881/tps23881-parity-14.bin",
 		.fw_sram_name = "ti/tps23881/tps23881-sram-14.bin",
 		.max_chan = TPS23881_MAX_CHANS,
+		.pse_ops = &tps23881_ops,
 		.reg16 = true,
+		.pol = POWER_POLICY,
 	},
 	[TPS23881B] = {
 		.dev_id = 0x24,
 		/* skip SRAM load, ROM provides Clause 145 hardware-level support */
 		.max_chan = TPS23881_MAX_CHANS,
+		.pse_ops = &tps23881_ops,
 		.reg16 = true,
+		.pol = POWER_POLICY,
+	},
+	[TPS23861] = {
+		.dev_id = 0x70,
+		/* skip SRAM load, ROM provides Clause 33 hardware-level support */
+		.max_chan = TPS23861_MAX_CHANS,
+		.no_poe4 = true,
+		.pse_ops = &tps23861_ops,
+		.pol = CURRENT_POLICY,
 	},
 };
 
@@ -1247,7 +1515,10 @@ static int tps23881_irq_event_over_current(struct tps23881_priv *priv,
 	 * to configured it again.
 	 */
 	for_each_set_bit(i, notifs_mask, priv->pcdev.nr_lines) {
-		ret = tps23881_pi_conf_pw_pol_limit(priv ,i);
+		if (priv->pol == CURRENT_POLICY)
+			ret = tps23881_pi_conf_current_pol_limit(priv, i);
+		else
+			ret = tps23881_pi_conf_pw_pol_limit(priv, i);
 		if (ret < 0)
 			return ret;
 	}
@@ -1551,6 +1822,8 @@ static int tps23881_i2c_probe(struct i2c_client *client)
 		priv->i2c_smbus_write_data = tps23861_i2c_smbus_write_byte_data;
 	}
 
+	priv->pol = info->pol;
+	priv->reg16 = info->reg16;
 	priv->client = client;
 	i2c_set_clientdata(client, priv);
 	priv->np = dev->of_node;
@@ -1561,6 +1834,7 @@ static int tps23881_i2c_probe(struct i2c_client *client)
 	priv->pcdev.types = ETHTOOL_PSE_C33;
 	priv->pcdev.nr_lines = info->max_chan;
 	priv->pcdev.supp_budget_eval_strategies = PSE_BUDGET_EVAL_STRAT_STATIC;
+	priv->no_poe4 = info->no_poe4;
 	ret = devm_pse_controller_register(dev, &priv->pcdev);
 	if (ret) {
 		return dev_err_probe(dev, ret,
@@ -1573,6 +1847,7 @@ static int tps23881_i2c_probe(struct i2c_client *client)
 static const struct i2c_device_id tps23881_id[] = {
 	{ .name = "tps23881", .driver_data = (kernel_ulong_t)&tps23881_info[TPS23881] },
 	{ .name = "tps23881b", .driver_data = (kernel_ulong_t)&tps23881_info[TPS23881B] },
+	{ .name = "tps23861", .driver_data = (kernel_ulong_t)&tps23881_info[TPS23861] },
 	{ }
 };
 MODULE_DEVICE_TABLE(i2c, tps23881_id);
@@ -1585,6 +1860,10 @@ static const struct of_device_id tps23881_of_match[] = {
 	{
 		.compatible = "ti,tps23881b",
 		.data = &tps23881_info[TPS23881B]
+	},
+	{
+		.compatible = "ti,tps23861-poe",
+		.data = &tps23881_info[TPS23861]
 	},
 	{ },
 };

@@ -17,6 +17,7 @@ properties:
     enum:
       - ti,tps23881
       - ti,tps23881b
+      - ti,tps23861-poe
 
   reg:
     maxItems: 1
@@ -37,6 +38,8 @@ properties:
       port matrix mapping is created when PSE PIs reference these channels in
       their pairsets. For 4-pair operation, two channels from the same group
       (0-3 or 4-7) must be referenced by a single PSE PI.
+      The tps23861 version has only 4 channels and does not support 4-pair
+      PoE.
     type: object
     additionalProperties: false
 

@@ -215,6 +215,23 @@ static int tps23881_pi_enable(struct pse_controller_dev *pcdev, int id)
 	return 0;
 }
 
+static int tps23881_pi_conf_pw_pol_limit(struct tps23881_priv *priv, int id)
+{
+	int ret;
+
+	/* No power policy */
+	if (priv->port[id].pw_pol < 0)
+		return 0;
+
+	ret = tps23881_pi_enable_manual_pol(priv, id);
+	if (ret < 0)
+		return ret;
+
+	/* Set power policy */
+	return tps23881_pi_set_pw_pol_limit(priv, id, priv->port[id].pw_pol,
+					    priv->port[id].is_4p);
+}
+
 static int tps23881_pi_disable(struct pse_controller_dev *pcdev, int id)
 {
 	struct tps23881_priv *priv = to_tps23881_priv(pcdev);
@@ -277,17 +294,7 @@ static int tps23881_pi_disable(struct pse_controller_dev *pcdev, int id)
 	if (ret)
 		return ret;
 
-	/* No power policy */
-	if (priv->port[id].pw_pol < 0)
-		return 0;
-
-	ret = tps23881_pi_enable_manual_pol(priv, id);
-	if (ret < 0)
-		return ret;
-
-	/* Set power policy */
-	return tps23881_pi_set_pw_pol_limit(priv, id, priv->port[id].pw_pol,
-					    priv->port[id].is_4p);
+	return tps23881_pi_conf_pw_pol_limit(priv, id);
 }
 
 static int
@@ -1202,17 +1209,7 @@ static int tps23881_irq_event_over_current(struct tps23881_priv *priv,
 	 * to configured it again.
 	 */
 	for_each_set_bit(i, notifs_mask, priv->pcdev.nr_lines) {
-		if (priv->port[i].pw_pol < 0)
-			continue;
-
-		ret = tps23881_pi_enable_manual_pol(priv, i);
-		if (ret < 0)
-			return ret;
-
-		/* Set power policy */
-		ret = tps23881_pi_set_pw_pol_limit(priv, i,
-						   priv->port[i].pw_pol,
-						   priv->port[i].is_4p);
+		ret = tps23881_pi_conf_pw_pol_limit(priv ,i);
 		if (ret < 0)
 			return ret;
 	}

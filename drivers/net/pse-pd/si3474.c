@@ -440,7 +440,6 @@ static int si3474_pi_get_actual_pw(struct pse_controller_dev *pcdev, int id)
 	struct si3474_priv *priv = to_si3474_priv(pcdev);
 	u8 chan0, chan1;
 	u32 uV, uA;
-	u64 tmp_64;
 	s32 ret;
 
 	ret = si3474_pi_get_voltage(&priv->pcdev, id);
@@ -462,10 +461,7 @@ static int si3474_pi_get_actual_pw(struct pse_controller_dev *pcdev, int id)
 		return ret;
 	uA += ret;
 
-	tmp_64 = uV;
-	tmp_64 *= uA;
-	/* mW = uV * uA / 1000000000 */
-	return DIV_ROUND_CLOSEST_ULL(tmp_64, 1000000000);
+	return pse_to_mW(uA, uV);
 }
 
 static const struct pse_controller_ops si3474_ops = {

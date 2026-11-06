@@ -65,8 +65,16 @@
 struct tps23881_port_desc {
 	u8 chan[2];
 	bool is_4p;
-	int pw_pol;
+	union {
+		int pw_pol;
+		int current_pol;
+	};
 	bool exist;
+};
+
+enum tps238xx_policy {
+	POWER_POLICY,
+	CURRENT_POLICY,
 };
 
 struct tps23881_priv {
@@ -77,6 +85,7 @@ struct tps23881_priv {
 	s32 (*i2c_smbus_read_data)(const struct i2c_client *client, u8 command);
 	s32 (*i2c_smbus_write_data)(const struct i2c_client *client, u8 command,
 				    u16 value);
+	enum tps238xx_policy pol;
 	bool no_poe4;
 };
 
@@ -299,7 +308,10 @@ static int tps23881_pi_disable(struct pse_controller_dev *pcdev, int id)
 	if (ret)
 		return ret;
 
-	return tps23881_pi_conf_pw_pol_limit(priv, id);
+	if (priv->pol == POWER_POLICY)
+		ret = tps23881_pi_conf_pw_pol_limit(priv, id);
+
+	return ret;
 }
 
 static int
@@ -866,8 +878,11 @@ tps23881_write_port_matrix(struct tps23881_priv *priv,
 			priv->port[pi_id].exist = true;
 		}
 
-		/* Initialize power policy internal value */
-		priv->port[pi_id].pw_pol = -1;
+		/* Initialize power and current policy internal value */
+		if (priv->pol == CURRENT_POLICY)
+			priv->port[pi_id].current_pol = -1;
+		else
+			priv->port[pi_id].pw_pol = -1;
 
 		/* Set hardware port matrix for all ports */
 		val |= hw_chan << (lgcl_chan * 2);
@@ -912,19 +927,21 @@ tps23881_set_ports_conf(struct tps23881_priv *priv,
 		return ret;
 
 	/* Set port power allocation */
-	val = 0;
-	for (i = 0; i < priv->pcdev.nr_lines; i++) {
-		if (!port_matrix[i].exist)
-			continue;
+	if (priv->pol == POWER_POLICY) {
+		val = 0;
+		for (i = 0; i < priv->pcdev.nr_lines; i++) {
+			if (!port_matrix[i].exist)
+				continue;
 
-		if (port_matrix[i].is_4p)
-			val |= 0xf << ((port_matrix[i].lgcl_chan[0] / 2) * 4);
-		else
-			val |= 0x3 << ((port_matrix[i].lgcl_chan[0] / 2) * 4);
+			if (port_matrix[i].is_4p)
+				val |= 0xf << ((port_matrix[i].lgcl_chan[0] / 2) * 4);
+			else
+				val |= 0x3 << ((port_matrix[i].lgcl_chan[0] / 2) * 4);
+		}
+		ret = priv->i2c_smbus_write_data(client, TPS23881_REG_PORT_POWER, val);
+		if (ret)
+			return ret;
 	}
-	ret = priv->i2c_smbus_write_data(client, TPS23881_REG_PORT_POWER, val);
-	if (ret)
-		return ret;
 
 	/* Enable detection and classification */
 	val = 0;
@@ -1056,6 +1073,7 @@ struct tps23881_info {
 	int max_chan;
 	bool no_poe4;
 	bool reg16;
+	enum tps238xx_policy pol;
 };
 
 enum tps23881_model {
@@ -1070,12 +1088,14 @@ static const struct tps23881_info tps23881_info[] = {
 		.fw_sram_name = "ti/tps23881/tps23881-sram-14.bin",
 		.max_chan = TPS23881_MAX_CHANS,
 		.reg16 = true,
+		.pol = POWER_POLICY,
 	},
 	[TPS23881B] = {
 		.dev_id = 0x24,
 		/* skip SRAM load, ROM provides Clause 145 hardware-level support */
 		.max_chan = TPS23881_MAX_CHANS,
 		.reg16 = true,
+		.pol = POWER_POLICY,
 	},
 };
 
@@ -1237,7 +1257,7 @@ static int tps23881_irq_event_over_current(struct tps23881_priv *priv,
 					   unsigned long *notifs,
 					   unsigned long *notifs_mask)
 {
-	int i, ret;
+	int i;
 	u8 chans;
 
 	chans = tps23881_irq_export_chans_helper(reg_val, 0);
@@ -1252,7 +1272,10 @@ static int tps23881_irq_event_over_current(struct tps23881_priv *priv,
 	 * to configured it again.
 	 */
 	for_each_set_bit(i, notifs_mask, priv->pcdev.nr_lines) {
-		ret = tps23881_pi_conf_pw_pol_limit(priv, i);
+		int ret = 0;
+
+		if (priv->pol == POWER_POLICY)
+			ret = tps23881_pi_conf_pw_pol_limit(priv, i);
 		if (ret < 0)
 			return ret;
 	}
@@ -1556,6 +1579,7 @@ static int tps23881_i2c_probe(struct i2c_client *client)
 		priv->i2c_smbus_write_data = tps23861_i2c_smbus_write_byte_data;
 	}
 
+	priv->pol = info->pol;
 	priv->client = client;
 	i2c_set_clientdata(client, priv);
 	priv->np = dev->of_node;

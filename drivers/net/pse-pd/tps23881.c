@@ -77,6 +77,7 @@ struct tps23881_priv {
 	s32 (*i2c_smbus_read_data)(const struct i2c_client *client, u8 command);
 	s32 (*i2c_smbus_write_data)(const struct i2c_client *client, u8 command,
 				    u16 value);
+	bool no_poe4;
 };
 
 static struct tps23881_priv *to_tps23881_priv(struct pse_controller_dev *pcdev)
@@ -678,6 +679,11 @@ tps23881_match_port_matrix(struct tps23881_priv *priv, int pi_id,
 	if (!pi->pairset[1].np)
 		return 0;
 
+	if (priv->no_poe4) {
+		pr_err("tps238xx: Does not support PoE4\n");
+		return -EOPNOTSUPP;
+	}
+
 	ret = tps23881_match_channel(&pi->pairset[1], max_chans, chan_node);
 	if (ret < 0)
 		return ret;
@@ -1020,6 +1026,11 @@ static int tps23881_pi_get_pw_req(struct pse_controller_dev *pcdev, int id)
 		return ret;
 
 	val = tps23881_calc_val(ret, chan, 4, 0xf);
+
+	/* There is no upper class than class 4 in Clause 33 */
+	if (priv->no_poe4 && val >= 0x8)
+		return -ERANGE;
+
 	return tps23881_power_class_table[val];
 }
 
@@ -1043,6 +1054,7 @@ struct tps23881_info {
 	const char *fw_parity_name;	/* parity code firmware file name */
 	const char *fw_sram_name;	/* SRAM code firmware file name */
 	int max_chan;
+	bool no_poe4;
 	bool reg16;
 };
 
@@ -1554,6 +1566,7 @@ static int tps23881_i2c_probe(struct i2c_client *client)
 	priv->pcdev.types = ETHTOOL_PSE_C33;
 	priv->pcdev.nr_lines = info->max_chan;
 	priv->pcdev.supp_budget_eval_strategies = PSE_BUDGET_EVAL_STRAT_STATIC;
+	priv->no_poe4 = info->no_poe4;
 	ret = devm_pse_controller_register(dev, &priv->pcdev);
 	if (ret) {
 		return dev_err_probe(dev, ret,

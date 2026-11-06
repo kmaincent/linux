@@ -87,6 +87,7 @@ struct tps23881_priv {
 				    u16 value);
 	enum tps238xx_policy pol;
 	bool no_poe4;
+	bool no_hw_port_matrix;
 };
 
 static struct tps23881_priv *to_tps23881_priv(struct pse_controller_dev *pcdev)
@@ -903,6 +904,9 @@ tps23881_write_port_matrix(struct tps23881_priv *priv,
 		val |= hw_chan << (lgcl_chan * 2);
 	}
 
+	if (priv->no_hw_port_matrix)
+		return 0;
+
 	/* Write hardware ports matrix */
 	return priv->i2c_smbus_write_data(client, TPS23881_REG_PORT_MAP, val);
 }
@@ -973,9 +977,17 @@ tps23881_set_ports_matrix(struct tps23881_priv *priv,
 			return ret;
 	}
 
-	ret = tps23881_sort_port_matrix(port_matrix, priv->pcdev.nr_lines);
-	if (ret < 0)
-		return ret;
+	if (priv->no_hw_port_matrix) {
+		for (i = 0; i < priv->pcdev.nr_lines; i++) {
+			port_matrix[i].lgcl_chan[0] = port_matrix[i].hw_chan[0];
+			port_matrix[i].lgcl_chan[1] = port_matrix[i].hw_chan[1];
+		}
+	} else {
+		ret = tps23881_sort_port_matrix(port_matrix,
+						priv->pcdev.nr_lines);
+		if (ret < 0)
+			return ret;
+	}
 
 	ret = tps23881_write_port_matrix(priv, port_matrix, ret);
 	if (ret)

@@ -86,6 +86,7 @@ struct tps23881_priv {
 	s32 (*i2c_smbus_write_data)(const struct i2c_client *client, u8 command,
 				    u16 value);
 	enum tps238xx_policy pol;
+	bool reg16;
 	bool no_poe4;
 	bool no_hw_port_matrix;
 };
@@ -387,6 +388,26 @@ tps23881_pi_get_pw_status(struct pse_controller_dev *pcdev, int id,
 	return 0;
 }
 
+static int tps238xx_i2c_read_16b(struct i2c_client *client, bool sup_16b,
+				 int reg)
+{
+	int val, ret;
+
+	if (sup_16b)
+		return i2c_smbus_read_word_data(client, reg);
+
+	ret = i2c_smbus_read_byte_data(client, reg);
+	if (ret < 0)
+		return ret;
+
+	val = ret;
+	ret = i2c_smbus_read_byte_data(client, reg + 1);
+	if (ret < 0)
+		return ret;
+
+	return val | ret << 8;
+}
+
 static int tps23881_pi_get_voltage(struct pse_controller_dev *pcdev, int id)
 {
 	struct tps23881_priv *priv = to_tps23881_priv(pcdev);
@@ -394,7 +415,7 @@ static int tps23881_pi_get_voltage(struct pse_controller_dev *pcdev, int id)
 	int ret;
 	u64 uV;
 
-	ret = priv->i2c_smbus_read_data(client, TPS23881_REG_INPUT_V);
+	ret = tps238xx_i2c_read_16b(client, priv->reg16, TPS23881_REG_INPUT_V);
 	if (ret < 0)
 		return ret;
 
@@ -413,7 +434,7 @@ tps23881_pi_get_chan_current(struct tps23881_priv *priv, u8 chan)
 
 	/* Registers 0x30 to 0x3d */
 	reg = TPS23881_REG_CHAN1_A + (chan % 4) * 4 + (chan >= 4);
-	ret = priv->i2c_smbus_read_data(client, reg);
+	ret = tps238xx_i2c_read_16b(client, priv->reg16, reg);
 	if (ret < 0)
 		return ret;
 
@@ -1592,6 +1613,7 @@ static int tps23881_i2c_probe(struct i2c_client *client)
 	}
 
 	priv->pol = info->pol;
+	priv->reg16 = info->reg16;
 	priv->client = client;
 	i2c_set_clientdata(client, priv);
 	priv->np = dev->of_node;

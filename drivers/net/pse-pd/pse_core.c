@@ -746,8 +746,7 @@ static int pse_pi_get_current_limit(struct regulator_dev *rdev)
 {
 	struct pse_controller_dev *pcdev = rdev_get_drvdata(rdev);
 	const struct pse_controller_ops *ops;
-	int id, uV, mW, ret;
-	s64 tmp_64;
+	int id, mW, ret;
 
 	ops = pcdev->ops;
 	id = rdev_get_id(rdev);
@@ -768,12 +767,8 @@ static int pse_pi_get_current_limit(struct regulator_dev *rdev)
 	}
 	if (ret < 0)
 		goto out;
-	uV = ret;
 
-	tmp_64 = mW;
-	tmp_64 *= 1000000000ull;
-	/* uA = mW * 1000000000 / uV */
-	ret = DIV_ROUND_CLOSEST_ULL(tmp_64, uV);
+	ret = pse_to_uA(mW, ret);
 
 out:
 	mutex_unlock(&pcdev->lock);
@@ -785,8 +780,7 @@ static int pse_pi_set_current_limit(struct regulator_dev *rdev, int min_uA,
 {
 	struct pse_controller_dev *pcdev = rdev_get_drvdata(rdev);
 	const struct pse_controller_ops *ops;
-	int id, mW, ret;
-	s64 tmp_64;
+	int id, ret;
 
 	ops = pcdev->ops;
 	if (!ops->pi_set_pw_limit || !ops->pi_get_voltage)
@@ -806,11 +800,7 @@ static int pse_pi_set_current_limit(struct regulator_dev *rdev, int min_uA,
 	if (ret < 0)
 		goto out;
 
-	tmp_64 = ret;
-	tmp_64 *= max_uA;
-	/* mW = uA * uV / 1000000000 */
-	mW = DIV_ROUND_CLOSEST_ULL(tmp_64, 1000000000);
-	ret = ops->pi_set_pw_limit(pcdev, id, mW);
+	ret = ops->pi_set_pw_limit(pcdev, id, pse_to_mW(max_uA, ret));
 out:
 	mutex_unlock(&pcdev->lock);
 
@@ -1852,8 +1842,7 @@ int pse_ethtool_set_pw_limit(struct pse_control *psec,
 			     struct netlink_ext_ack *extack,
 			     const unsigned int pw_limit)
 {
-	int uV, uA, ret, previous_pw_allocated = 0;
-	s64 tmp_64;
+	int uA, ret, previous_pw_allocated = 0;
 
 	if (pw_limit > MAX_PI_PW)
 		return -ERANGE;
@@ -1869,12 +1858,7 @@ int pse_ethtool_set_pw_limit(struct pse_control *psec,
 			       "Error reading PSE voltage");
 		return ret;
 	}
-	uV = ret;
-
-	tmp_64 = pw_limit;
-	tmp_64 *= 1000000000ull;
-	/* uA = mW * 1000000000 / uV */
-	uA = DIV_ROUND_CLOSEST_ULL(tmp_64, uV);
+	uA = pse_to_uA(pw_limit, ret);
 
 	/* Update power budget only in software power control case and
 	 * if a Power Device is powered.

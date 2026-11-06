@@ -337,6 +337,40 @@ enum pse_budget_eval_strategies {
 	PSE_BUDGET_EVAL_STRAT_DYNAMIC	= 1 << 2,
 };
 
+/**
+ * pse_to_mW - Convert current and voltage to power in milliwatts
+ * @uA: current in microamps
+ * @uV: voltage in microvolts
+ *
+ * Return: the power in mW
+ */
+static inline int pse_to_mW(int uA, int uV)
+{
+	s64 tmp_64;
+
+	tmp_64 = uA;
+	tmp_64 *= uV;
+	/* mW = uA * uV / 1000000000 */
+	return DIV_ROUND_CLOSEST_ULL(tmp_64, 1000000000);
+}
+
+/**
+ * pse_to_uA - Convert power and voltage to current in microamps
+ * @mW: power in milliwatts
+ * @uV: voltage in microvolts
+ *
+ * Return: the current in uA
+ */
+static inline int pse_to_uA(int mW, int uV)
+{
+	s64 tmp_64;
+
+	tmp_64 = mW;
+	tmp_64 *= 1000000000ull;
+	/* uA = mW * 1000000000 / uV */
+	return DIV_ROUND_CLOSEST_ULL(tmp_64, uV);
+}
+
 #if IS_ENABLED(CONFIG_PSE_CONTROLLER)
 int pse_controller_register(struct pse_controller_dev *pcdev);
 void pse_controller_unregister(struct pse_controller_dev *pcdev);

@@ -25,6 +25,11 @@
 #define TPS23881_REG_IT_CLASC	BIT(4)
 #define TPS23881_REG_IT_IFAULT	BIT(5)
 #define TPS23881_REG_IT_SUPF	BIT(7)
+#define TPS23881_REG_IT_USED_MASK	(TPS23881_REG_IT_IFAULT | \
+					 TPS23881_REG_IT_SUPF | \
+					 TPS23881_REG_IT_DETC | \
+					 TPS23881_REG_IT_CLASC | \
+					 TPS23881_REG_IT_DISF)
 #define TPS23881_REG_DET_EVENT	0x5
 #define TPS23881_REG_FAULT	0x7
 #define TPS23881_REG_SUPF_EVENT	0xb
@@ -1370,17 +1375,14 @@ static int tps23881_irq_handler(int irq, struct pse_controller_dev *pcdev,
 {
 	struct tps23881_priv *priv = to_tps23881_priv(pcdev);
 	struct i2c_client *client = priv->client;
-	int ret, it_mask, retry;
-
-	/* Get interruption mask */
-	ret = i2c_smbus_read_word_data(client, TPS23881_REG_IT_MASK);
-	if (ret < 0)
-		return ret;
-	it_mask = ret;
+	int ret, retry;
 
 	/* Read interrupt register until it frees the interruption pin. */
 	retry = 0;
 	while (true) {
+		int it_mask = TPS23881_REG_IT_USED_MASK |
+			      TPS23881_REG_IT_USED_MASK << 8;
+
 		if (retry > TPS23881_MAX_IRQ_RETRIES) {
 			dev_err(&client->dev, "interrupt never freed");
 			return -ETIMEDOUT;
@@ -1404,6 +1406,11 @@ static int tps23881_irq_handler(int irq, struct pse_controller_dev *pcdev,
 	return 0;
 }
 
+const struct pse_irq_desc irq_desc = {
+	.name = "tps23881-irq",
+	.map_event = tps23881_irq_handler,
+};
+
 static int tps23881_setup_irq(struct tps23881_priv *priv, int irq)
 {
 	struct i2c_client *client = priv->client;
@@ -1419,9 +1426,7 @@ static int tps23881_setup_irq(struct tps23881_priv *priv, int irq)
 		return -EINVAL;
 	}
 
-	val = TPS23881_REG_IT_IFAULT | TPS23881_REG_IT_SUPF |
-	      TPS23881_REG_IT_DETC | TPS23881_REG_IT_CLASC |
-	      TPS23881_REG_IT_DISF;
+	val = TPS23881_REG_IT_USED_MASK;
 	val |= val << 8;
 	ret = i2c_smbus_write_word_data(client, TPS23881_REG_IT_MASK, val);
 	if (ret)

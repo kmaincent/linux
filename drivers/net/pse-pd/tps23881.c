@@ -1441,6 +1441,7 @@ static int tps23881_setup_irq(struct tps23881_priv *priv, int irq)
 
 static int tps23881_i2c_probe(struct i2c_client *client)
 {
+	static const char * const regulators[] = { "vdd", "vpwr" };
 	struct device *dev = &client->dev;
 	const struct tps23881_info *info;
 	struct tps23881_priv *priv;
@@ -1460,6 +1461,12 @@ static int tps23881_i2c_probe(struct i2c_client *client)
 	priv = devm_kzalloc_obj(dev, *priv);
 	if (!priv)
 		return -ENOMEM;
+
+	ret = devm_regulator_bulk_get_enable(dev, ARRAY_SIZE(regulators),
+					     regulators);
+	if (ret)
+		return dev_err_probe(dev, ret,
+				     "Failed to enable regulators\n");
 
 	reset = devm_gpiod_get_optional(dev, "reset", GPIOD_OUT_HIGH);
 	if (IS_ERR(reset))

@@ -74,6 +74,7 @@ struct tps23881_port_desc {
 	bool is_4p;
 	int pw_pol;
 	bool exist;
+	bool pd_detected;
 };
 
 struct tps23881_priv {
@@ -1210,6 +1211,21 @@ static void tps23881_irq_event_over_temp(struct tps23881_priv *priv,
 	}
 }
 
+static void tps23881_port_set_disconnected(struct tps23881_priv *priv,
+					   u8 chans)
+{
+	for (int i = 0; i < priv->pcdev.nr_lines; i++) {
+		u8 chan;
+
+		if (!priv->port[i].exist)
+			continue;
+
+		chan = priv->port[i].chan[0];
+		if (BIT(chan) & chans)
+			priv->port[chans].pd_detected = false;
+	}
+}
+
 static int tps23881_irq_event_over_current(struct tps23881_priv *priv,
 					   u16 reg_val,
 					   unsigned long *notifs,
@@ -1222,6 +1238,7 @@ static int tps23881_irq_event_over_current(struct tps23881_priv *priv,
 	if (!chans)
 		return 0;
 
+	tps23881_port_set_disconnected(priv, chans);
 	tps23881_set_notifs_helper(priv, chans, notifs, notifs_mask,
 				   ETHTOOL_PSE_EVENT_OVER_CURRENT |
 				   ETHTOOL_C33_PSE_EVENT_DISCONNECTION);
@@ -1256,9 +1273,12 @@ static void tps23881_irq_event_disconnection(struct tps23881_priv *priv,
 	u8 chans;
 
 	chans = tps23881_irq_export_chans_helper(reg_val, 4);
-	if (chans)
-		tps23881_set_notifs_helper(priv, chans, notifs, notifs_mask,
-					   ETHTOOL_C33_PSE_EVENT_DISCONNECTION);
+	if (!chans)
+		return;
+
+	tps23881_port_set_disconnected(priv, chans);
+	tps23881_set_notifs_helper(priv, chans, notifs, notifs_mask,
+				   ETHTOOL_C33_PSE_EVENT_DISCONNECTION);
 }
 
 static int tps23881_irq_event_detection(struct tps23881_priv *priv,
@@ -1279,10 +1299,17 @@ static int tps23881_irq_event_detection(struct tps23881_priv *priv,
 
 		val = tps23881_calc_val(ret, i, 0, 0xf);
 		/* If detection valid */
-		if (val == 0x4)
-			event = ETHTOOL_C33_PSE_EVENT_DETECTION;
-		else
+		if (val == 0x4) {
+			if (!priv->port[i].pd_detected) {
+				event = ETHTOOL_C33_PSE_EVENT_DETECTION;
+				priv->port[i].pd_detected = true;
+			}
+		} else if (priv->port[i].pd_detected) {
 			event = ETHTOOL_C33_PSE_EVENT_DISCONNECTION;
+			priv->port[i].pd_detected = false;
+		} else {
+			continue;
+		}
 
 		tps23881_set_notifs_helper(priv, BIT(i), notifs,
 					   notifs_mask, event);
@@ -1406,7 +1433,7 @@ static int tps23881_irq_handler(int irq, struct pse_controller_dev *pcdev,
 	return 0;
 }
 
-const struct pse_irq_desc irq_desc = {
+const struct pse_irq_desc tps23881_irq_desc = {
 	.name = "tps23881-irq",
 	.map_event = tps23881_irq_handler,
 };
@@ -1414,17 +1441,8 @@ const struct pse_irq_desc irq_desc = {
 static int tps23881_setup_irq(struct tps23881_priv *priv, int irq)
 {
 	struct i2c_client *client = priv->client;
-	struct pse_irq_desc irq_desc = {
-		.name = "tps23881-irq",
-		.map_event = tps23881_irq_handler,
-	};
 	int ret;
 	u16 val;
-
-	if (!irq) {
-		dev_err(&client->dev, "interrupt is missing");
-		return -EINVAL;
-	}
 
 	val = TPS23881_REG_IT_USED_MASK;
 	val |= val << 8;
@@ -1449,7 +1467,21 @@ static int tps23881_setup_irq(struct tps23881_priv *priv, int irq)
 	if (ret < 0)
 		return ret;
 
-	return devm_pse_irq_helper(&priv->pcdev, irq, 0, &irq_desc);
+	return devm_pse_irq_helper(&priv->pcdev, irq, 0, &tps23881_irq_desc);
+}
+
+static int tps23881_setup_polling(struct tps23881_priv *priv)
+{
+	struct i2c_client *client = priv->client;
+	int ret;
+
+	/* Reset interrupts registers */
+	ret = priv->i2c_smbus_write_data(client, TPS23881_REG_RESET,
+					 TPS23881_REG_CLRAIN);
+	if (ret < 0)
+		return ret;
+
+	return devm_pse_poll_helper(&priv->pcdev, &tps23881_irq_desc);
 }
 
 static int tps23881_i2c_probe(struct i2c_client *client)
@@ -1545,7 +1577,12 @@ static int tps23881_i2c_probe(struct i2c_client *client)
 				     "failed to register PSE controller\n");
 	}
 
-	return tps23881_setup_irq(priv, client->irq);
+	if (client->irq)
+		ret = tps23881_setup_irq(priv, client->irq);
+	else
+		ret = tps23881_setup_polling(priv);
+
+	return ret;
 }
 
 static const struct i2c_device_id tps23881_id[] = {
